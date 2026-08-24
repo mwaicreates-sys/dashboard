@@ -1,0 +1,45 @@
+"use client";
+
+import Link from "next/link";
+import { TopOutflowTable } from "./CompactTable";
+import { TodoList } from "./Checklist";
+import { GoalsList } from "./Checklist";
+import { ProgressList } from "./ProgressList";
+import { TopSpendingsTable } from "./CompactTable";
+
+const cardLink =
+  "group block rounded border border-border bg-card p-2.5 cursor-pointer transition-colors hover:border-secondary-text/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue";
+
+export function InformationGrid() {
+  return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+      <Link
+        href="/outflow"
+        aria-label="Top 20 Outflow — view outflow details"
+        className={cardLink}
+      >
+        <TopOutflowTable />
+      </Link>
+      <div className="rounded border border-border bg-card p-2.5">
+        <TodoList />
+      </div>
+      <div className="rounded border border-border bg-card p-2.5">
+        <GoalsList />
+      </div>
+      <Link
+        href="/goals"
+        aria-label="Progress — view goals and milestones details"
+        className={cardLink}
+      >
+        <ProgressList />
+      </Link>
+      <Link
+        href="/outflow"
+        aria-label="Top 20 Spendings — view spending details"
+        className={cardLink}
+      >
+        <TopSpendingsTable />
+      </Link>
+    </div>
+  );
+}
