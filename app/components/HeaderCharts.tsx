@@ -13,6 +13,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { useDashboardData } from "@/lib/dashboardData";
+import { formatCurrencyCompact } from "@/lib/currency";
 
 export function NetWorthGrowth() {
   const { netWorthGrowth } = useDashboardData();
@@ -34,26 +35,29 @@ export function NetWorthGrowth() {
               <stop offset="95%" stopColor="#3B7A9E" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D9" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "#999999" }}
+            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
             interval="preserveStartEnd"
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "#999999" }}
-            width={20}
+            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
+            width={30}
+            tickFormatter={(v) => formatCurrencyCompact(Number(v))}
           />
           <Tooltip
+            formatter={(value) => formatCurrencyCompact(Number(value))}
             contentStyle={{
-              backgroundColor: "#FAFAFA",
-              border: "1px solid #E2E0D9",
+              backgroundColor: "var(--tooltip-bg)",
+              border: "1px solid var(--tooltip-border)",
               borderRadius: "4px",
               fontSize: "10px",
+              color: "var(--color-primary-text)",
             }}
           />
           <Area
@@ -91,26 +95,28 @@ export function IncomeStreamStack() {
       </h3>
       <ResponsiveContainer width="100%" height={70}>
         <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D9" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "#999999" }}
+            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
             interval="preserveStartEnd"
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "#999999" }}
+            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
             width={20}
           />
           <Tooltip
+            formatter={(value) => formatCurrencyCompact(Number(value))}
             contentStyle={{
-              backgroundColor: "#FAFAFA",
-              border: "1px solid #E2E0D9",
+              backgroundColor: "var(--tooltip-bg)",
+              border: "1px solid var(--tooltip-border)",
               borderRadius: "4px",
               fontSize: "10px",
+              color: "var(--color-primary-text)",
             }}
           />
           <Bar dataKey="salary" stackId="1" fill="#3B7A9E" barSize={5} />

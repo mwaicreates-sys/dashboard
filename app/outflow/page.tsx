@@ -1,17 +1,18 @@
 "use client";
 
 import { useDashboardData } from "@/lib/dashboardData";
+import { formatCurrencyFull } from "@/lib/currency";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function OutflowDetails() {
-  const { transactions, categories, accounts, selectedPeriod, topSpendings, outflowTypes, topOutflows, budgets } =
+  const { displayTransactions, categories, accounts, selectedPeriod, topOutflows } =
     useDashboardData();
 
   const period = selectedPeriod;
-  const periodTx = transactions.filter(
+  const periodTx = displayTransactions.filter(
     (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "expense"
   );
-  const transferTx = transactions.filter(
+  const transferTx = displayTransactions.filter(
     (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "transfer"
   );
 
@@ -39,7 +40,7 @@ export default function OutflowDetails() {
       const cat = categories.find((c) => c.id === catId);
       return {
         Category: cat?.name ?? catId,
-        Amount: `$${amount.toLocaleString()}`,
+        Amount: formatCurrencyFull(amount),
         Share: totalOutflow > 0 ? `${Math.round((amount / totalOutflow) * 100)}%` : "0%",
       };
     });
@@ -51,19 +52,19 @@ export default function OutflowDetails() {
       Date: tx.date,
       Description: tx.description,
       Category: categories.find((c) => c.id === tx.categoryId)?.name ?? tx.categoryId,
-      Amount: `$${tx.amount.toLocaleString()}`,
+      Amount: formatCurrencyFull(tx.amount),
     }));
 
   return (
     <main className="flex-1 p-3 md:p-4">
-      <div className="mx-auto max-w-[1200px] rounded border border-border bg-white p-3 md:p-4 shadow-sm">
+      <div className="mx-auto max-w-[1200px] rounded border border-border bg-surface p-3 md:p-4 shadow-sm">
         <DetailHeader title="Outflow Details" subtitle="Bills, expenses, and transfers out of checking" />
         <div className="mt-3 h-px bg-border" />
 
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-2.5">
-          <MetricCard label="Total Outflow" value={`$${totalOutflow.toLocaleString()}`} sub="Period expenses" />
-          <MetricCard label="Debt Payments" value={`$${debtPayments.toLocaleString()}`} sub="Card + loan payments" />
-          <MetricCard label="Savings/Inv Transfers" value={`$${savingsInvestTransfers.toLocaleString()}`} sub="Moved to savings & investments" />
+          <MetricCard label="Total Outflow" value={formatCurrencyFull(totalOutflow)} sub="Period expenses" />
+          <MetricCard label="Debt Payments" value={formatCurrencyFull(debtPayments)} sub="Card + loan payments" />
+          <MetricCard label="Savings/Inv Transfers" value={formatCurrencyFull(savingsInvestTransfers)} sub="Moved to savings & investments" />
           <MetricCard label="Transactions" value={String(periodTx.length)} sub="Expense entries" />
         </div>
 

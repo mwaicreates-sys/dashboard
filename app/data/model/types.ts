@@ -63,6 +63,13 @@ export interface Transaction {
   plannedId?: string;
   /** Required when type === "transfer" (destination account). */
   toAccountId?: string;
+  /**
+   * ISO currency code the ORIGINAL amount is denominated in. Absent on
+   * legacy records — those default to their account's currency (the
+   * pre-existing single-currency dataset), so nothing is ever guessed
+   * per transaction and no historical value changes.
+   */
+  currency?: string;
 }
 
 // ------------------------------------------------------------
@@ -123,6 +130,9 @@ export interface Goal {
   currentAmount: number;
   targetDate: string; // "YYYY-MM-DD"
   status: GoalStatus;
+  /** Currency the target/current amounts are stored in. Legacy goals
+   *  default to the app's base currency (USD), never guessed. */
+  currency?: string;
 }
 
 // ------------------------------------------------------------
@@ -145,6 +155,9 @@ export interface PlannedTransaction {
   recurrence?: Recurrence;
   /** Destination account — required when type === "transfer". */
   toAccountId?: string;
+  /** Currency the planned amount is stored in. Legacy entries default
+   *  to their account's currency, never guessed. */
+  currency?: string;
 }
 
 // ------------------------------------------------------------
@@ -239,4 +252,65 @@ export interface ProgressRow {
   label: string;
   value: number;
   total: number;
+}
+
+// ------------------------------------------------------------
+// Activities — day-to-day tracking
+//
+// A lightweight, optional layer for the Activity tab. Activities
+// are associated with a specific calendar date and exist purely
+// for personal tracking; they never affect the financial data.
+// ------------------------------------------------------------
+
+export type ActivityStatus = "pending" | "in-progress" | "completed";
+
+export type ActivityPriority = "low" | "medium" | "high";
+
+export interface Activity {
+  id: string;
+  title: string;
+  /** The calendar date the activity belongs to ("YYYY-MM-DD"). */
+  date: string;
+  notes?: string;
+  status: ActivityStatus;
+  /** Optional due date ("YYYY-MM-DD"). */
+  dueDate?: string;
+  priority?: ActivityPriority;
+  /** ISO timestamp when the activity was marked completed. */
+  completedAt?: string;
+}
+
+// ------------------------------------------------------------
+// Notifications / Reminders
+// ------------------------------------------------------------
+
+export type NotificationType = "activity" | "budget" | "recurring" | "goal" | "info";
+
+export type NotificationStatus = "unread" | "read" | "dismissed";
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  status: NotificationStatus;
+  /** ISO timestamp or date string. */
+  date: string;
+  actionLabel?: string;
+  actionHref?: string;
+}
+
+// ------------------------------------------------------------
+// Dashboard search & filter
+// ------------------------------------------------------------
+
+export interface DashboardFilter {
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  categoryId?: string;
+  type?: "income" | "expense" | "all";
+  minAmount?: number;
+  maxAmount?: number;
+  status?: string;
 }

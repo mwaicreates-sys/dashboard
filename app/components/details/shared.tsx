@@ -8,7 +8,7 @@ export function BackToDashboard() {
       href="/"
       className="rounded border border-border bg-card px-2 py-1 text-[11px] text-secondary-text hover:bg-light-border focus:outline-none focus:ring-1 focus:ring-blue"
     >
-      ← Annual Dashboard
+      ← Dashboard
     </Link>
   );
 }

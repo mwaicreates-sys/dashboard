@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: `dark` class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-cream: #F3F1EC;
   --color-white: #FFFFFF;
+  /* Page/surface containers. `white` stays true white so `text-white`
+     (buttons) is always readable; surfaces flip via this token. */
+  --color-surface: #FFFFFF;
   --color-card: #FAFAFA;
   --color-primary-text: #1A1A1A;
   --color-secondary-text: #666666;
@@ -19,8 +25,170 @@
   --font-sans: var(--font-geist-sans);
 }
 
+/* Chart + tooltip tokens (consumed by the Recharts components). */
+:root {
+  --chart-grid: #E5E3DC;
+  --chart-axis: #999999;
+  --tooltip-bg: #FFFFFF;
+  --tooltip-border: #E2E0D9;
+}
+
+html {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --color-cream: #0A0A0C;
+  --color-surface: #141417;
+  --color-card: #1C1C20;
+  --color-primary-text: #F4F4F2;
+  --color-secondary-text: #A9A9AE;
+  --color-muted-text: #717176;
+  --color-border: #2C2C31;
+  --color-light-border: #242429;
+
+  --chart-grid: #2C2C31;
+  --chart-axis: #8E8E93;
+  --tooltip-bg: #1F1F24;
+  --tooltip-border: #3A3A40;
+}
+
 body {
   background: var(--color-cream);
   color: var(--color-primary-text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* Subtle entrance for tab switches. The `to` keyframe must NOT persist a
+   `transform`: a retained transform on an ancestor creates a containing block
+   that traps nested `position: fixed` modals (they would anchor to the tall
+   tab container instead of the viewport and get pushed off-screen). */
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tab-enter {
+  animation: tab-enter 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-enter {
+    animation: none;
+  }
+}
+
+/* Year selector slide — direction-aware horizontal transition. */
+@keyframes year-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes year-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.year-enter-right {
+  animation: year-in-right 0.32s cubic-bezier(0.32, 0.72, 0.36, 1) both;
+}
+.year-enter-left {
+  animation: year-in-left 0.32s cubic-bezier(0.32, 0.72, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .year-enter-right,
+  .year-enter-left {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   Shared modal system (Entry forms, Day view, Profile sheets)
+   ------------------------------------------------------------
+   ROOT CAUSE FIX: earlier modals capped their height with `dvh`
+   units ONLY. In browsers that do not support `dvh` (older
+   Safari, several Android WebViews / in-app browsers), the
+   `max-height: 90dvh` declaration is dropped as invalid, so the
+   modal lost its height cap, grew to full content height and
+   overflowed below the viewport — pushing the action footer
+   behind the floating bottom navigation.
+
+   Solution: a vh fallback first, then dvh to override where
+   supported. The overlay occupies the full viewport and sits
+   above the bottom nav (z-50). Only the form body scrolls; the
+   header and footer stay pinned.
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100; /* above bottom nav (z-50) */
+  display: flex;
+  align-items: flex-end; /* mobile bottom-sheet */
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  min-height: 100vh; /* fallback */
+  min-height: 100dvh; /* active viewport where supported */
+}
+@media (min-width: 640px) {
+  .modal-overlay {
+    align-items: center; /* desktop centered card */
+    padding: 1rem;
+  }
+}
+
+.modal-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 92vh; /* fallback */
+  max-height: 92dvh; /* active viewport where supported */
+}
+
+/* Scrollable modal body: flexes to fill, scrolls internally so the
+   header above and action footer below never leave the viewport. */
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Action footer: pinned to the bottom of the constrained sheet and
+   kept clear of device safe areas / the floating nav. */
+.modal-footer {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-light-border);
+  padding: 0.75rem 1rem max(env(safe-area-inset-bottom), 0.75rem);
+}
+@media (min-width: 640px) {
+  .modal-footer {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+}
+
+

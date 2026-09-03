@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local development artifacts (session logs, HTTP captures, scratch files)
+dev*.log
+root*.html
+cleantest.txt
+csslinks.txt
+dev.css
+routecodes.txt
+null

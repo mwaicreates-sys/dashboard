@@ -12,6 +12,7 @@ import {
   SpendingRow,
   ProgressRow,
 } from "@/data/model/types";
+import { formatCurrencyCompact } from "@/lib/currency";
 
 export function calculateKPIs(
   transactions: Transaction[],
@@ -45,14 +46,18 @@ export function calculateKPIs(
   const spentPercentage = totalIncome > 0 ? Math.round((totalOutflow / totalIncome) * 100) : 0;
   const investmentTarget = goals.find((g) => g.name.includes("retirement"))?.targetAmount || 20000;
   const investmentPercentage = investmentTarget > 0 ? Math.round((investmentBalance / investmentTarget) * 100) : 0;
-  const originalDebt = 12400;
+  // Baseline debt comes from the (converted) opening balances so the ratio
+  // stays currency-consistent no matter which display currency is active.
+  const originalDebt = accounts
+    .filter((a) => a.type === "credit" || a.type === "loan")
+    .reduce((sum, a) => sum + Math.abs(a.openingBalance), 0);
   const debtPercentage = originalDebt > 0 ? Math.round((totalDebt / originalDebt) * 100) : 0;
 
   return [
-    { label: "Saved", value: formatCurrency(savingsBalance), percentage: savingsPercentage, color: "#5B8C5A" },
-    { label: "Spent", value: formatCurrency(totalOutflow), percentage: spentPercentage, color: "#E87A5D" },
-    { label: "Invested", value: formatCurrency(investmentBalance), percentage: investmentPercentage, color: "#3B7A9E" },
-    { label: "Debts", value: formatCurrency(totalDebt), percentage: debtPercentage, color: "#D96B82" },
+    { label: "Saved", value: formatCurrencyCompact(savingsBalance), percentage: savingsPercentage, color: "#5B8C5A" },
+    { label: "Spent", value: formatCurrencyCompact(totalOutflow), percentage: spentPercentage, color: "#E87A5D" },
+    { label: "Invested", value: formatCurrencyCompact(investmentBalance), percentage: investmentPercentage, color: "#3B7A9E" },
+    { label: "Debts", value: formatCurrencyCompact(totalDebt), percentage: debtPercentage, color: "#D96B82" },
   ];
 }
 
@@ -168,7 +173,7 @@ export function calculateTopOutflows(
     .slice(0, 10)
     .map(([name, amount]) => ({
       name,
-      amount: formatCurrency(amount),
+      amount: formatCurrencyCompact(amount),
       percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
     }));
 }
@@ -192,7 +197,7 @@ export function calculateTopSpendings(
       const cat = categories.find((c) => c.id === catId);
       return {
         name: cat?.name || catId,
-        amount: formatCurrency(amount),
+        amount: formatCurrencyCompact(amount),
         percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
       };
     });
@@ -227,9 +232,3 @@ export function calculateSavingsGoal(accounts: Account[], goals: Goal[]): DonutR
   ];
 }
 
-function formatCurrency(value: number): string {
-  if (value >= 1000) {
-    return `$${(value / 1000).toFixed(1)}k`;
-  }
-  return `$${value.toFixed(0)}`;
-}

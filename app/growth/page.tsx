@@ -9,29 +9,26 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
+import { formatCurrencyFull, formatCurrencyCompact } from "@/lib/currency";
 import { useDashboardData } from "@/lib/dashboardData";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function GrowthDetails() {
-  const { accounts, transactions, selectedPeriod, cumulativeGrowth, monthlyIncomeOutflow } = useDashboardData();
+  const { displayAccounts, selectedPeriod, cumulativeGrowth, monthlyIncomeOutflow } = useDashboardData();
 
   const period = selectedPeriod;
-  const periodTx = transactions.filter(
-    (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "")
-  );
-
-  const assets = accounts
+  const assets = displayAccounts
     .filter((a) => a.type === "checking" || a.type === "savings" || a.type === "investment")
     .reduce((sum, a) => sum + a.currentBalance, 0);
-  const debts = accounts
+  const debts = displayAccounts
     .filter((a) => a.type === "credit" || a.type === "loan")
     .reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);
   const currentNetWorth = assets - debts;
 
-  const openingAssets = accounts
+  const openingAssets = displayAccounts
     .filter((a) => a.type === "checking" || a.type === "savings" || a.type === "investment")
     .reduce((sum, a) => sum + a.openingBalance, 0);
-  const openingDebts = accounts
+  const openingDebts = displayAccounts
     .filter((a) => a.type === "credit" || a.type === "loan")
     .reduce((sum, a) => sum + Math.abs(a.openingBalance), 0);
   const startingNetWorth = openingAssets - openingDebts;
@@ -39,37 +36,37 @@ export default function GrowthDetails() {
   const change = currentNetWorth - startingNetWorth;
   const growthPct = startingNetWorth !== 0 ? Math.round((change / Math.abs(startingNetWorth)) * 100) : 0;
 
-  const accountRows = accounts.map((a) => ({
+  const accountRows = displayAccounts.map((a) => ({
     Account: a.name,
     Type: a.type.charAt(0).toUpperCase() + a.type.slice(1),
-    Opening: `$${a.openingBalance.toLocaleString()}`,
-    Current: `$${a.currentBalance.toLocaleString()}`,
-    Change: `$${(a.currentBalance - a.openingBalance).toLocaleString()}`,
+    Opening: formatCurrencyFull(a.openingBalance),
+    Current: formatCurrencyFull(a.currentBalance),
+    Change: formatCurrencyFull(a.currentBalance - a.openingBalance),
   }));
 
   const monthRows = monthlyIncomeOutflow.map((m, i) => ({
     Month: m.month,
-    Income: `$${m.income.toLocaleString()}`,
-    Outflow: `$${m.outflow.toLocaleString()}`,
-    Net: `$${(m.income - m.outflow).toLocaleString()}`,
+    Income: formatCurrencyFull(m.income),
+    Outflow: formatCurrencyFull(m.outflow),
+    Net: formatCurrencyFull(m.income - m.outflow),
     Cumulative: cumulativeGrowth[i] ? `${cumulativeGrowth[i].value}` : "—",
   }));
 
   return (
     <main className="flex-1 p-3 md:p-4">
-      <div className="mx-auto max-w-[1200px] rounded border border-border bg-white p-3 md:p-4 shadow-sm">
+      <div className="mx-auto max-w-[1200px] rounded border border-border bg-surface p-3 md:p-4 shadow-sm">
         <DetailHeader title="Growth Details" subtitle="Net worth progression and cumulative growth" />
         <div className="mt-3 h-px bg-border" />
 
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <MetricCard label="Starting Net Worth" value={`$${startingNetWorth.toLocaleString()}`} sub="Opening balances minus debts" />
-          <MetricCard label="Current Net Worth" value={`$${currentNetWorth.toLocaleString()}`} sub={`${period?.label ?? ""}`} />
-          <MetricCard label="Change" value={`${change >= 0 ? "+" : ""}$${change.toLocaleString()}`} sub="Current vs starting" />
+          <MetricCard label="Starting Net Worth" value={formatCurrencyFull(startingNetWorth)} sub="Opening balances minus debts" />
+          <MetricCard label="Current Net Worth" value={formatCurrencyFull(currentNetWorth)} sub={`${period?.label ?? ""}`} />
+          <MetricCard label="Change" value={`${change >= 0 ? "+" : ""}${formatCurrencyFull(change)}`} sub="Current vs starting" />
           <MetricCard label="Growth" value={`${growthPct >= 0 ? "+" : ""}${growthPct}%`} sub="Relative to start" />
         </div>
 
         <div className="mt-3">
-          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">Cumulative Net Savings ($ hundreds)</h3>
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">Cumulative Net Savings</h3>
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={cumulativeGrowth}>
               <defs>
@@ -78,15 +75,17 @@ export default function GrowthDetails() {
                   <stop offset="95%" stopColor="#F4B860" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D9" vertical={false} />
-              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#999999" }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#999999" }} width={40} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "var(--chart-axis)" }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "var(--chart-axis)" }} width={54} tickFormatter={(v) => formatCurrencyCompact(Number(v))} />
               <Tooltip
+                formatter={(value) => formatCurrencyCompact(Number(value))}
                 contentStyle={{
-                  backgroundColor: "#FAFAFA",
-                  border: "1px solid #E2E0D9",
+                  backgroundColor: "var(--tooltip-bg)",
+                  border: "1px solid var(--tooltip-border)",
                   borderRadius: "4px",
                   fontSize: "11px",
+                  color: "var(--color-primary-text)",
                 }}
               />
               <Area type="monotone" dataKey="value" name="Cumulative" stroke="#F4B860" strokeWidth={1.5} fill="url(#growthGradient)" />

@@ -35,10 +35,11 @@ export function SavingsGoal() {
           </Pie>
           <Tooltip
             contentStyle={{
-              backgroundColor: "#FAFAFA",
-              border: "1px solid #E2E0D9",
+              backgroundColor: "var(--tooltip-bg)",
+              border: "1px solid var(--tooltip-border)",
               borderRadius: "4px",
               fontSize: "11px",
+              color: "var(--color-primary-text)",
             }}
           />
         </PieChart>

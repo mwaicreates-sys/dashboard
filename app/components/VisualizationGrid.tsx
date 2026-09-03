@@ -5,14 +5,13 @@ import { MonthlyIncomeOutflow } from "./MonthlyIncomeOutflow";
 import { IncomeSplit } from "./IncomeSplit";
 import { OutflowTypes } from "./OutflowTypes";
 import { CumulativeGrowth } from "./CumulativeGrowth";
-import { SavingsGoal } from "./SavingsGoal";
 
 const cardLink =
   "group block rounded border border-border bg-card p-2.5 cursor-pointer transition-colors hover:border-secondary-text/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue";
 
 export function VisualizationGrid() {
   return (
-      <div className="grid grid-cols-1 md:grid-cols-[28fr_18fr_18fr_18fr_18fr] gap-2.5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5">
       <Link
         href="/outflow"
         aria-label="Monthly Income vs Outflow — view outflow details"
@@ -40,13 +39,6 @@ export function VisualizationGrid() {
         className={cardLink}
       >
         <CumulativeGrowth />
-      </Link>
-      <Link
-        href="/goals"
-        aria-label="Savings Goal — view goals details"
-        className={cardLink}
-      >
-        <SavingsGoal />
       </Link>
     </div>
   );

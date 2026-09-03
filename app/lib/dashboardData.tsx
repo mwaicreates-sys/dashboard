@@ -17,8 +17,13 @@ import {
   SpendingRow,
   ProgressRow,
   TodoRow,
+  Activity,
+  ActivityStatus,
   NewEntity,
+  Notification,
+  DashboardFilter,
 } from "@/data/model/types";
+import { todayISO, addDaysISO, getWeekRange } from "@/lib/dates";
 import {
   accounts as seedAccounts,
   transactions as seedTransactions,
@@ -29,7 +34,7 @@ import {
   periods as seedPeriods,
   initialTodos,
 } from "@/data/seed";
-import { getPeriodById } from "@/lib/period";
+import { calendarYearPeriod, yearsWithData, DEFAULT_YEAR } from "@/lib/period";
 import {
   calculateKPIs,
   calculateMonthlyIncomeOutflow,
@@ -45,6 +50,21 @@ import {
 } from "@/lib/calculations";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { addMonths } from "@/data/store";
+import { DEFAULT_CURRENCY, CURRENCIES, setActiveCurrency, type CurrencyCode } from "@/lib/currency";
+import { convertAmount, getExchangeRate, type FxRate, type FxStatus } from "@/lib/exchangeRates";
+import {
+  fetchBusinessesForUser,
+  pullBusinessState,
+  pushBusinessState,
+  getActiveBusinessId,
+  setActiveBusinessId,
+  getCloudOwnerTag,
+  setCloudOwnerTag,
+  clearTenantLocalData,
+  type BusinessInfo,
+  type CloudSyncState,
+} from "@/lib/cloudSync";
+import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 
 interface DashboardState {
   accounts: Account[];
@@ -54,6 +74,20 @@ interface DashboardState {
   goals: Goal[];
   plannedTransactions: PlannedTransaction[];
   todos: TodoRow[];
+  /** Active display currency code (wallet/display currency). */
+  currency: CurrencyCode;
+  /** Currency the stored/legacy dataset is denominated in (USD). */
+  baseCurrency: CurrencyCode;
+  /** Selected calendar year (e.g. 2026 → Jan 1 – Dec 31). */
+  selectedYear: number;
+  /** Calendar years that contain real data, most recent first. */
+  availableYears: number[];
+  activities: Activity[];
+  /** Currently selected day for drill-down (YYYY-MM-DD), or null. */
+  selectedDay: string | null;
+  notifications: Notification[];
+  /** Active search/filter state. */
+  dashboardFilter: DashboardFilter;
   selectedPeriodId: string;
   periods: PeriodConfig[];
 }
@@ -72,15 +106,96 @@ interface DashboardContextValue extends DashboardState {
   progress: ProgressRow[];
   savingsGoal: DonutRow[];
   setSelectedPeriodId: (id: string) => void;
+  /** Select a calendar year that contains real data. */
+  setSelectedYear: (year: number) => void;
   toggleTodo: (id: string) => void;
   addTodo: (text: string) => void;
   updateGoal: (id: string, patch: Partial<NewEntity<Goal>>) => void;
   updateAccountBalance: (id: string, balance: number) => void;
   addTransaction: (tx: Omit<Transaction, "id">) => void;
 
+    addActivity: (data: Omit<Activity, "id">) => void;
+  updateActivity: (id: string, patch: Partial<Omit<Activity, "id">>) => void;
+  updateActivityStatus: (id: string, status: ActivityStatus) => void;
+  deleteActivity: (id: string) => void;
+
+  // ---- notifications & reminders ----
+  notifications: Notification[];
+  addNotification: (data: Omit<Notification, "id">) => void;
+  dismissNotification: (id: string) => void;
+  markNotificationRead: (id: string) => void;
+  clearNotifications: () => void;
+  derivedNotifications: Notification[];
+
+  // ---- day drill-down ----
+  selectedDay: string | null;
+  setSelectedDay: (day: string | null) => void;
+  dayTransactions: Transaction[];
+  dayActivities: Activity[];
+  todayISO: string;
+  todayIncome: number;
+  todayOutflow: number;
+    todayNet: number;
+
+  // ---- extra derived data ----
+  activitiesForWeek: Activity[];
+  budgetSummary: { totalBudgeted: number; totalActual: number; percentage: number; byMonth: Map<string, { budgeted: number; actual: number }> };
+  upcomingRecurring: PlannedTransaction[];
+  notificationsCount: number;
+
+  // ---- search & filtering ----
+    dashboardFilter: DashboardFilter;
+  setDashboardFilter: (patch: Partial<DashboardFilter>) => void;
+  clearDashboardFilter: () => void;
+  /** Change the active display currency (persisted + FX warmed). */
+  setCurrency: (code: CurrencyCode) => void;
+  filteredTransactions: Transaction[];
+
+  // ---- display-currency view (RAW records stay untouched) ----
+  /**
+   * Transactions with `amount` converted to the display currency via the
+   * centralized FX layer. Each row still carries its ORIGINAL `currency`
+   * and original value semantics for editing/recovery.
+   */
+  displayTransactions: Transaction[];
+  /** Accounts with balances converted to the display currency. */
+  displayAccounts: Account[];
+  /** Goals with target/current amounts converted to the display currency. */
+  displayGoals: Goal[];
+  /** Planned transactions with amounts converted to the display currency. */
+  displayPlannedTransactions: PlannedTransaction[];
+  /** FX layer status for the Profile currency card (loading/ready/stale/error). */
+  fxState: FxStatus;
+  /**
+   * Convert an amount from its stored currency into the display currency
+   * using the centralized best-known rate. Falls back to the raw value
+   * when a rate is not yet available (status surfaces the gap).
+   */
+  convertAmount: (value: number, from: string, to?: string) => number;
+
+  // ---- multi-tenant cloud session (Supabase) ----
+  /** Business currently driving the session. Null = local-only (no
+   *  Supabase configured, or nobody signed in). */
+  activeBusiness: BusinessInfo | null;
+  /** Cloud sync status for the active business. */
+  cloudSyncState: CloudSyncState;
+
   // ---- data-entry CRUD ----
   updateTransaction: (id: string, patch: Partial<Omit<Transaction, "id">>) => void;
   deleteTransaction: (id: string) => void;
+  /**
+   * Bulk-replace whole collections (demo data load / restore). Only the
+   * provided arrays are replaced; everything else stays untouched.
+   */
+  replaceAllData: (data: {
+    accounts?: Account[];
+    transactions?: Transaction[];
+    categories?: Category[];
+    budgets?: Budget[];
+    goals?: Goal[];
+    plannedTransactions?: PlannedTransaction[];
+    activities?: Activity[];
+  }) => void;
   addAccount: (data: Omit<Account, "id" | "currentBalance">) => void;
   updateAccount: (id: string, patch: Partial<NewEntity<Account>>) => void;
   deleteAccount: (id: string) => void;
@@ -154,37 +269,448 @@ const recomputeBudgetActuals = (budgets: Budget[], transactions: Transaction[]):
   }));
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
-  const [accounts, setAccounts] = useState<Account[]>(() => loadFromStorage("accounts", seedAccounts));
-  const [transactions, setTransactions] = useState<Transaction[]>(() => loadFromStorage("transactions", seedTransactions));
-  const [categories, setCategories] = useState<Category[]>(() => loadFromStorage("categories", seedCategories));
-  const [budgets, setBudgets] = useState<Budget[]>(() => loadFromStorage("budgets", seedBudgets));
-  const [goals, setGoals] = useState<Goal[]>(() => loadFromStorage("goals", seedGoals));
-  const [plannedTransactions, setPlannedTransactions] = useState<PlannedTransaction[]>(() => loadFromStorage("planned", seedPlanned));
-  const [todos, setTodos] = useState<TodoRow[]>(() => loadFromStorage("todos", initialTodos));
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => loadFromStorage("period", "2025-2026"));
+  // Deterministic SSR: the first render (server AND client) uses seed
+  // defaults; persisted state is loaded once after mount. This keeps the
+  // server HTML identical to the first client render (no hydration drift),
+  // while saved user data still wins right after hydration.
+  const [hydrated, setHydrated] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>(seedAccounts);
+  const [transactions, setTransactions] = useState<Transaction[]>(seedTransactions);
+  const [categories, setCategories] = useState<Category[]>(seedCategories);
+  const [budgets, setBudgets] = useState<Budget[]>(seedBudgets);
+  const [goals, setGoals] = useState<Goal[]>(seedGoals);
+  const [plannedTransactions, setPlannedTransactions] = useState<PlannedTransaction[]>(seedPlanned);
+  const [todos, setTodos] = useState<TodoRow[]>(initialTodos);
+  const [selectedYear, setSelectedYear] = useState<number>(DEFAULT_YEAR);
+  const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [dashboardFilter, setDashboardFilterValue] = useState<DashboardFilter>({});
 
-  const selectedPeriod = useMemo(() => getPeriodById(selectedPeriodId), [selectedPeriodId]);
+  // ---- multi-tenant cloud session (Supabase) ----
+  const [activeBusiness, setActiveBusiness] = useState<BusinessInfo | null>(null);
+  const [cloudSyncState, setCloudSyncState] = useState<CloudSyncState>("idle");
+  /** True while the bootstrap pull is in flight (pushes are suppressed). */
+  const cloudBusy = useRef(false);
+  /** Debounce handle for push-after-change. */
+  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => { saveToStorage("accounts", accounts); }, [accounts]);
-  useEffect(() => { saveToStorage("transactions", transactions); }, [transactions]);
-  useEffect(() => { saveToStorage("categories", categories); }, [categories]);
-  useEffect(() => { saveToStorage("budgets", budgets); }, [budgets]);
-  useEffect(() => { saveToStorage("goals", goals); }, [goals]);
-  useEffect(() => { saveToStorage("planned", plannedTransactions); }, [plannedTransactions]);
-  useEffect(() => { saveToStorage("todos", todos); }, [todos]);
-  useEffect(() => { saveToStorage("period", selectedPeriodId); }, [selectedPeriodId]);
+  // Keep the centralized formatter layer in sync with the selection so every
+  // legacy formatMoney/formatMoneyFull call site is currency-aware.
+  setActiveCurrency(currency);
 
-  const kpis = useMemo(() => calculateKPIs(transactions, accounts, goals, selectedPeriod || seedPeriods[0]), [transactions, accounts, goals, selectedPeriod]);
-  const monthlyIncomeOutflow = useMemo(() => calculateMonthlyIncomeOutflow(transactions, selectedPeriod || seedPeriods[0]), [transactions, selectedPeriod]);
-  const incomeSplit = useMemo(() => calculateIncomeSplit(transactions, categories, selectedPeriod || seedPeriods[0]), [transactions, categories, selectedPeriod]);
-  const outflowTypes = useMemo(() => calculateOutflowTypes(transactions, categories, selectedPeriod || seedPeriods[0]), [transactions, categories, selectedPeriod]);
-  const cumulativeGrowth = useMemo(() => calculateCumulativeGrowth(transactions, selectedPeriod || seedPeriods[0]), [transactions, selectedPeriod]);
-  const netWorthGrowth = useMemo(() => calculateNetWorthGrowth(accounts), [accounts]);
-  const incomeStreamStack = useMemo(() => calculateIncomeStreamStack(transactions, categories, selectedPeriod || seedPeriods[0]), [transactions, categories, selectedPeriod]);
-  const topOutflows = useMemo(() => calculateTopOutflows(transactions, selectedPeriod || seedPeriods[0]), [transactions, selectedPeriod]);
-  const topSpendings = useMemo(() => calculateTopSpendings(transactions, categories, selectedPeriod || seedPeriods[0]), [transactions, categories, selectedPeriod]);
-  const progress = useMemo(() => calculateProgress(goals), [goals]);
-  const savingsGoal = useMemo(() => calculateSavingsGoal(accounts, goals), [accounts, goals]);
+  // ------------------------------------------------------------------
+  // Centralized FX — REAL rates via ONE service (app/lib/exchangeRates).
+  // Conversion is computed here and handed to every consumer as display
+  // views; RAW records are never mutated, so switching currencies back
+  // and forth never re-converts already-converted values.
+  // ------------------------------------------------------------------
+  const baseCurrency: CurrencyCode = DEFAULT_CURRENCY;
+  const [fxState, setFxState] = useState<FxStatus>({
+    status: "idle",
+    from: DEFAULT_CURRENCY,
+    to: currency,
+    missing: [],
+  });
+  // Bumped each time a rate warms so derived display data recomputes.
+  const [fxTick, setFxTick] = useState(0);
+  const prevCurrencyRef = useRef<CurrencyCode>(currency);
+  useEffect(() => {
+    prevCurrencyRef.current = currency;
+  }, [currency]);
+
+  const acctCurrency = (accountId?: string): string =>
+    accounts.find((a) => a.id === accountId)?.currency ?? DEFAULT_CURRENCY;
+  const txBaseCurrency = (t: Transaction): string =>
+    t.currency ?? acctCurrency(t.accountId);
+  const goalBaseCurrency = (g: Goal): string => g.currency ?? DEFAULT_CURRENCY;
+  const plannedBaseCurrency = (p: PlannedTransaction): string =>
+    p.currency ?? acctCurrency(p.accountId);
+
+  /** Best-known sync conversion to the display currency (raw fallback). */
+  const toDisplay = (value: number, from: string): number =>
+    convertAmount(value, from, currency) ?? value;
+
+  /** Distinct stored/base currencies that need a rate toward `currency`. */
+  const fxBaseCurrencies = useMemo(() => {
+    const set = new Set<string>([DEFAULT_CURRENCY]);
+    for (const t of transactions) set.add(txBaseCurrency(t));
+    for (const g of goals) set.add(goalBaseCurrency(g));
+    for (const p of plannedTransactions) set.add(plannedBaseCurrency(p));
+    return [...set];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, goals, plannedTransactions]);
+
+  /** Refresh/warm the cached rate(s) for `target`. One request per base,
+   *  then all sync convertAmount calls reuse the stored snapshot. */
+  const warmFxRates = async (target: string) => {
+    const from =
+      prevCurrencyRef.current === target && fxState.status === "idle"
+        ? baseCurrency
+        : prevCurrencyRef.current;
+    const bases = fxBaseCurrencies;
+    setFxState({ status: "loading", from, to: target, missing: [] });
+    const results = await Promise.all(
+      bases.map(async (base): Promise<{ base: string; rate: FxRate | null }> => {
+        try {
+          return { base, rate: await getExchangeRate(base, target) };
+        } catch {
+          return { base, rate: null };
+        }
+      })
+    );
+    const found = results.filter((r) => r.rate !== null);
+    const missing = results.filter((r) => r.rate === null).map((r) => r.base);
+    const stale = found.some((r) => r.rate!.stale === true);
+    const updatedAt = found.reduce((max, r) => Math.max(max, r.rate!.timestamp), 0);
+    setFxState({
+      status:
+        missing.length === 0
+          ? stale
+            ? "stale"
+            : "ready"
+          : found.length === 0
+            ? "error"
+            : "partial",
+      from,
+      to: target,
+      updatedAt: updatedAt || undefined,
+      missing,
+    });
+    setFxTick((t) => t + 1);
+  };
+
+  /** Persisted + FX-aware currency switch shown to the UI. */
+  const changeCurrency = (next: CurrencyCode) => {
+    if (next === currency) return;
+    setCurrency(next);
+    void warmFxRates(next);
+  };
+
+  // Warm rates for the persisted display currency once after hydration.
+  useEffect(() => {
+    if (!hydrated) return;
+    void warmFxRates(currency);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
+
+  // --- calendar-year period derivation (existing calculations keep working) ---
+  const availableYears = useMemo(() => yearsWithData(transactions), [transactions]);
+  // Free navigation: any plausible year may be selected (empty years simply
+  // show honest empty states); only guard against corrupted stored values.
+  const effectiveYear =
+    selectedYear >= 1970 && selectedYear <= 2100
+      ? selectedYear
+      : (availableYears[0] ?? DEFAULT_YEAR);
+  const selectedPeriod = useMemo(() => calendarYearPeriod(effectiveYear), [effectiveYear]);
+  const periods = useMemo(() => availableYears.map((y) => calendarYearPeriod(y)), [availableYears]);
+  const selectedPeriodId = String(effectiveYear);
+
+  // Back-compat: the whole app used to select "periods"; now the period is
+  // implied by the selected year. Keep a setter so old call sites still work.
+  const setSelectedPeriodId = (id: string) => setSelectedYear(Number(id));
+
+  // Load persisted state once after mount. Declared BEFORE the persistence
+  // effects below so stored data is read before anything could be rewritten.
+  // setState-in-effect is intentional here: reading localStorage during render
+  // would make server and first-client renders diverge (hydration mismatch).
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    setAccounts(loadFromStorage("accounts", seedAccounts));
+    setTransactions(loadFromStorage("transactions", seedTransactions));
+    setCategories(loadFromStorage("categories", seedCategories));
+    setBudgets(loadFromStorage("budgets", seedBudgets));
+    setGoals(loadFromStorage("goals", seedGoals));
+    setPlannedTransactions(loadFromStorage("planned", seedPlanned));
+    setTodos(loadFromStorage("todos", initialTodos));
+        setSelectedYear(loadFromStorage("year", DEFAULT_YEAR));
+    setCurrency(loadFromStorage("currency", DEFAULT_CURRENCY));
+    setActivities(loadFromStorage("activities", []));
+    setSelectedDay(loadFromStorage("selectedDay", todayISO()));
+    setNotifications(loadFromStorage("notifications", []));
+    setDashboardFilterValue(loadFromStorage("dashboardFilter", {}));
+    setHydrated(true);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => { if (hydrated) saveToStorage("accounts", accounts); }, [hydrated, accounts]);
+  useEffect(() => { if (hydrated) saveToStorage("transactions", transactions); }, [hydrated, transactions]);
+  useEffect(() => { if (hydrated) saveToStorage("categories", categories); }, [hydrated, categories]);
+  useEffect(() => { if (hydrated) saveToStorage("budgets", budgets); }, [hydrated, budgets]);
+  useEffect(() => { if (hydrated) saveToStorage("goals", goals); }, [hydrated, goals]);
+  useEffect(() => { if (hydrated) saveToStorage("planned", plannedTransactions); }, [hydrated, plannedTransactions]);
+  useEffect(() => { if (hydrated) saveToStorage("todos", todos); }, [hydrated, todos]);
+  useEffect(() => { if (hydrated) saveToStorage("year", effectiveYear); }, [hydrated, effectiveYear]);
+  useEffect(() => { if (hydrated) saveToStorage("currency", currency); }, [hydrated, currency]);
+  useEffect(() => { if (hydrated) saveToStorage("activities", activities); }, [hydrated, activities]);
+  useEffect(() => { if (hydrated) saveToStorage("selectedDay", selectedDay); }, [hydrated, selectedDay]);
+  useEffect(() => { if (hydrated) saveToStorage("notifications", notifications); }, [hydrated, notifications]);
+  useEffect(() => { if (hydrated) saveToStorage("dashboardFilter", dashboardFilter); }, [hydrated, dashboardFilter]);
+
+  // ---- display-currency views (RAW records stay untouched & recoverable) ----
+  const displayTransactions = useMemo(
+    () =>
+      transactions.map((t) => ({
+        ...t,
+        amount: toDisplay(t.amount, txBaseCurrency(t)),
+        currency: t.currency ?? txBaseCurrency(t),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transactions, currency, fxTick]
+  );
+
+  const displayAccounts = useMemo(
+    () =>
+      accounts.map((a) => ({
+        ...a,
+        currentBalance: toDisplay(a.currentBalance, a.currency ?? DEFAULT_CURRENCY),
+        openingBalance: toDisplay(a.openingBalance, a.currency ?? DEFAULT_CURRENCY),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accounts, currency, fxTick]
+  );
+
+  const displayGoals = useMemo(
+    () =>
+      goals.map((g) => ({
+        ...g,
+        targetAmount: toDisplay(g.targetAmount, goalBaseCurrency(g)),
+        currentAmount: toDisplay(g.currentAmount, goalBaseCurrency(g)),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [goals, currency, fxTick]
+  );
+
+  const displayPlannedTransactions = useMemo(
+    () =>
+      plannedTransactions.map((p) => ({
+        ...p,
+        amount: toDisplay(p.amount, plannedBaseCurrency(p)),
+        currency: p.currency ?? plannedBaseCurrency(p),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [plannedTransactions, currency, fxTick]
+  );
+
+  // Every existing calculation now consumes display-currency values so all
+  // KPIs, charts, monthlies, growth and goals agree on ONE conversion layer.
+  const kpis = useMemo(() => calculateKPIs(displayTransactions, displayAccounts, displayGoals, selectedPeriod || seedPeriods[0]), [displayTransactions, displayAccounts, displayGoals, selectedPeriod]);
+  const monthlyIncomeOutflow = useMemo(() => calculateMonthlyIncomeOutflow(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
+  const incomeSplit = useMemo(() => calculateIncomeSplit(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
+  const outflowTypes = useMemo(() => calculateOutflowTypes(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
+  const cumulativeGrowth = useMemo(() => calculateCumulativeGrowth(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
+  const netWorthGrowth = useMemo(() => calculateNetWorthGrowth(displayAccounts), [displayAccounts]);
+  const incomeStreamStack = useMemo(() => calculateIncomeStreamStack(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
+  const topOutflows = useMemo(() => calculateTopOutflows(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
+  const topSpendings = useMemo(() => calculateTopSpendings(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
+    const progress = useMemo(() => calculateProgress(displayGoals), [displayGoals]);
+  const savingsGoal = useMemo(() => calculateSavingsGoal(displayAccounts, displayGoals), [displayAccounts, displayGoals]);
+
+  // ---- New Feature: derived data for Today, Day view, Search, Budget, Goals ----
+
+    /** Transactions filtered by the dashboardFilter (display-currency view) */
+  const filteredTransactions = useMemo(() => {
+    return displayTransactions.filter((tx) => {
+      // Default to the selected year's range if no explicit date range is set
+      const yearStr = String(effectiveYear);
+      const dateFrom = dashboardFilter.dateFrom ?? `${yearStr}-01-01`;
+      const dateTo = dashboardFilter.dateTo ?? `${yearStr}-12-31`;
+
+      if (tx.date < dateFrom || tx.date > dateTo) return false;
+
+      // Type filter
+      if (dashboardFilter.type && dashboardFilter.type !== "all" && tx.type !== dashboardFilter.type) return false;
+
+      // Category filter
+      if (dashboardFilter.categoryId && tx.categoryId !== dashboardFilter.categoryId) return false;
+
+      // Search filter
+      if (dashboardFilter.search) {
+        const query = dashboardFilter.search.toLowerCase();
+        if (!tx.description.toLowerCase().includes(query)) return false;
+      }
+
+      // Status filter
+      if (dashboardFilter.status && dashboardFilter.status !== "all" && tx.status !== dashboardFilter.status) return false;
+
+      // Amount filters
+      if (dashboardFilter.minAmount !== undefined && tx.amount < dashboardFilter.minAmount) return false;
+      if (dashboardFilter.maxAmount !== undefined && tx.amount > dashboardFilter.maxAmount) return false;
+
+      return true;
+    });
+  }, [displayTransactions, dashboardFilter, effectiveYear]);
+
+  /** Activities for the current week */
+  const activitiesForWeek = useMemo(() => {
+    const { start, end } = getWeekRange(todayISO());
+    return activities.filter((a) => a.date >= start && a.date <= end);
+  }, [activities]);
+
+    /** Budget summary for the selected year — aggregates all budgets */
+  const budgetSummary = useMemo(() => {
+    const yearBudgets = budgets;
+    let totalBudgeted = 0;
+    let totalActual = 0;
+    const byMonth = new Map<string, { budgeted: number; actual: number }>();
+
+    for (const b of yearBudgets) {
+      totalBudgeted += b.plannedAmount;
+      totalActual += b.actualAmount ?? 0;
+      const mk = b.month;
+      const existing = byMonth.get(mk) ?? { budgeted: 0, actual: 0 };
+      existing.budgeted += b.plannedAmount;
+      existing.actual += b.actualAmount ?? 0;
+      byMonth.set(mk, existing);
+    }
+
+    return {
+      totalBudgeted,
+      totalActual,
+      percentage: totalBudgeted > 0 ? Math.round((totalActual / totalBudgeted) * 100) : 0,
+      byMonth,
+    };
+  }, [budgets]);
+
+  /** Upcoming recurring/planned transactions (next 30 days) */
+    const upcomingRecurring = useMemo(() => {
+    const now = todayISO();
+    const in30 = addDaysISO(now, 30);
+    return [...plannedTransactions]
+      .filter((p) => p.status === "pending" && p.date >= now && p.date <= in30)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [plannedTransactions]);
+
+    /** Unread notifications count */
+  const notificationsCount = useMemo(() => notifications.filter((n) => n.status === "unread").length, [notifications]);
+
+  /** Budgets that are approaching their limit (80%+ used) */
+  const budgetWarnings = useMemo(() => {
+    return budgets.filter((b) => b.plannedAmount > 0 && (b.actualAmount ?? 0) / b.plannedAmount >= 0.8).length;
+  }, [budgets]);
+
+    useEffect(() => {
+    const warnings = budgetWarnings;
+    if (warnings > 0 && notificationsCount === 0) {
+      // Could generate a notification here, but we keep it simple
+    }
+  }, [budgetWarnings, notificationsCount]);
+
+    // ---- day drill-down derived data ----
+  const effectiveDay = selectedDay ?? todayISO();
+  const dayTransactions = useMemo(
+    () => displayTransactions.filter((tx) => tx.date === effectiveDay),
+    [displayTransactions, effectiveDay]
+  );
+  const dayActivities = useMemo(
+    () => activities.filter((a) => a.date === effectiveDay),
+    [activities, effectiveDay]
+  );
+  const todayISOValue = todayISO();
+  const todayTxs = useMemo(
+    () => displayTransactions.filter((tx) => tx.date === todayISOValue),
+    [displayTransactions, todayISOValue]
+  );
+  const todayIncome = useMemo(
+    () => todayTxs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0),
+    [todayTxs]
+  );
+  const todayOutflow = useMemo(
+    () => todayTxs.filter((tx) => tx.type === "expense" || tx.type === "transfer").reduce((sum, tx) => sum + tx.amount, 0),
+    [todayTxs]
+  );
+  const todayNet = todayIncome - todayOutflow;
+
+  /**
+   * Derived reminders computed from live data (never persisted, never fake):
+   * overdue/due-today activities, upcoming scheduled transactions within 7
+   * days, budgets ≥80% used this month, and a monthly-review nudge at
+   * month-end. Stored (user) notifications are appended after these.
+   */
+  const derivedNotifications = useMemo<Notification[]>(() => {
+    const today = todayISO();
+    const in7 = addDaysISO(today, 7);
+    const alerts: Notification[] = [];
+
+    for (const a of activities) {
+      if (!a.dueDate || a.status === "completed") continue;
+      if (a.dueDate < today) {
+        alerts.push({
+          id: `alert-overdue-${a.id}`,
+          title: "Activity overdue",
+          message: `“${a.title}” was due ${a.dueDate}.`,
+          type: "activity",
+          status: "unread",
+          date: a.dueDate,
+          actionLabel: "Review",
+          actionHref: undefined,
+        });
+      } else if (a.dueDate === today) {
+        alerts.push({
+          id: `alert-due-${a.id}`,
+          title: "Activity due today",
+          message: `“${a.title}” is due today.`,
+          type: "activity",
+          status: "unread",
+          date: a.dueDate,
+        });
+      }
+    }
+
+    const month = today.slice(0, 7);
+    for (const b of budgets) {
+      if (b.month !== month || b.plannedAmount <= 0) continue;
+      const pct = Math.round(((b.actualAmount ?? 0) / b.plannedAmount) * 100);
+      if (pct >= 80) {
+        const catName = categories.find((c) => c.id === b.categoryId)?.name ?? "Budget";
+        alerts.push({
+          id: `alert-budget-${b.id}`,
+          title: pct >= 100 ? "Budget exceeded" : "Budget approaching limit",
+          message: `${catName}: ${pct}% of this month's budget used.`,
+          type: "budget",
+          status: "unread",
+          date: today,
+        });
+      }
+    }
+
+    for (const p of plannedTransactions) {
+      if (p.status !== "pending" || p.date < today || p.date > in7) continue;
+      alerts.push({
+        id: `alert-recurring-${p.id}`,
+        title: p.recurrence && p.recurrence !== "once" ? "Recurring entry upcoming" : "Scheduled entry upcoming",
+        message: `${p.description} — expected ${p.date}.`,
+        type: "recurring",
+        status: "unread",
+        date: p.date,
+      });
+    }
+
+    const day = Number(today.slice(8, 10));
+    if (day >= 28) {
+      alerts.push({
+        id: "alert-monthly-review",
+        title: "Monthly review",
+        message: "The month is ending — review spending against your budget.",
+        type: "info",
+        status: "unread",
+        date: today,
+      });
+    }
+
+    return [...alerts, ...notifications]
+      .sort((x, y) => (y.date ?? "").localeCompare(x.date ?? ""))
+      .slice(0, 30);
+  }, [activities, budgets, categories, plannedTransactions, notifications]);
+
+  const setDashboardFilter = (patch: Partial<DashboardFilter>) => {
+    setDashboardFilterValue((prev) => ({ ...prev, ...patch }));
+  };
+
+  const clearDashboardFilter = () => {
+    setDashboardFilterValue({});
+  };
 
   const toggleTodo = (id: string) => {
     setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
@@ -193,6 +719,22 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const addTodo = (text: string) => {
     const newTodo: TodoRow = { id: `t-${Date.now()}`, text, done: false };
     setTodos((prev) => [...prev, newTodo]);
+  };
+
+  // ---- activities (day-to-day tracking) ----
+  const addActivity = (data: Omit<Activity, "id">) => {
+    setActivities((prev) => [
+      ...prev,
+      { id: `activity-${Date.now()}`, ...data, status: data.status ?? "pending" },
+    ]);
+  };
+
+  const updateActivity = (id: string, patch: Partial<Omit<Activity, "id">>) => {
+    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  };
+
+  const deleteActivity = (id: string) => {
+    setActivities((prev) => prev.filter((a) => a.id !== id));
   };
 
   const updateGoal = (id: string, patch: Partial<NewEntity<Goal>>) => {
@@ -226,6 +768,37 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setBudgets((bs) => recomputeBudgetActuals(bs, next));
       return next;
     });
+  };
+
+  const replaceAllData = (data: Parameters<DashboardContextValue["replaceAllData"]>[0]) => {
+    if (data.accounts) setAccounts(data.accounts);
+    if (data.transactions) setTransactions(data.transactions);
+    if (data.categories) setCategories(data.categories);
+    if (data.budgets) setBudgets(data.budgets);
+    if (data.goals) setGoals(data.goals);
+    if (data.plannedTransactions) setPlannedTransactions(data.plannedTransactions);
+    if (data.activities) setActivities(data.activities);
+  };
+
+  /** Restore the app's starter (seed) dataset after a tenant-cache wipe.
+   *  Mirrors the hydration defaults exactly — used by the cloud bootstrap
+   *  when the local snapshot belongs to a different business, so a new
+   *  workspace initializes from the designed starter data instead of
+   *  inheriting another business's cached records. */
+  const resetToStarterState = () => {
+    setAccounts(seedAccounts);
+    setTransactions(seedTransactions);
+    setCategories(seedCategories);
+    setBudgets(seedBudgets);
+    setGoals(seedGoals);
+    setPlannedTransactions(seedPlanned);
+    setTodos(initialTodos);
+    setActivities([]);
+    setNotifications([]);
+    setSelectedYear(DEFAULT_YEAR);
+    setCurrency(DEFAULT_CURRENCY);
+    setSelectedDay(todayISO());
+    setDashboardFilterValue({});
   };
 
   const addAccount = (data: Omit<Account, "id" | "currentBalance">) => {
@@ -360,6 +933,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       status: "cleared",
       plannedId: id,
       toAccountId: planned.toAccountId,
+      currency: planned.currency,
     });
 
     // Mark the planned transaction as completed and lock it
@@ -380,6 +954,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         status: "pending",
         recurrence: planned.recurrence,
         toAccountId: planned.toAccountId,
+        currency: planned.currency,
       });
     }
 
@@ -397,11 +972,183 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     return true;
   };
 
-  const updateAccountBalance = (id: string, balance: number) => {
+    const updateAccountBalance = (id: string, balance: number) => {
     setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, currentBalance: balance } : a)));
   };
 
-  const value: DashboardContextValue = {
+  // ---- activity status shorthand ----
+  const updateActivityStatus = (id: string, status: ActivityStatus) => {
+    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
+  };
+
+  // ---- notifications ----
+    const addNotification = (data: Omit<Notification, "id">) => {
+    setNotifications((prev) => [
+      ...prev,
+      { id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...data, status: "unread" },
+    ]);
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const markNotificationRead = (id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
+  };
+
+  // ---- multi-tenant cloud bootstrap (Supabase) ----------------------
+  // After hydration: resolve the signed-in user's businesses → activate
+  // the stored one → pull its state from the cloud. Only collections the
+  // cloud actually HAS are imported, so an empty (fresh) business never
+  // wipes local/seed data — the local dataset becomes the starter data
+  // that the debounced push below uploads for the new tenant.
+  useEffect(() => {
+    if (!hydrated || !isSupabaseConfigured()) return;
+    let cancelled = false;
+    cloudBusy.current = true;
+    // Deliberate synchronous status flip: "syncing" must be visible the
+    // instant the bootstrap starts, before the first await resolves. This
+    // is external-system synchronization (Supabase), which React permits;
+    // the lint rule cannot see the async boundary, so disable it here only.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCloudSyncState("syncing");
+    (async () => {
+      try {
+        const client = getSupabaseBrowserClient();
+        const auth = await client?.auth.getUser();
+        if (!auth?.data?.user) {
+          // Local-only session — behave exactly like the single-user app.
+          setCloudSyncState("idle");
+          return;
+        }
+        const businesses = await fetchBusinessesForUser();
+        if (cancelled) return;
+        if (!businesses || businesses.length === 0) {
+          // Signed in but no membership visible (RLS deny / propagation).
+          setCloudSyncState("error");
+          return;
+        }
+        const storedId = getActiveBusinessId();
+        const active = businesses.find((b) => b.id === storedId) ?? businesses[0];
+        setActiveBusiness(active);
+        if (active.id !== storedId) setActiveBusinessId(active.id);
+
+        const cloud = await pullBusinessState(active.id);
+        if (cancelled) return;
+        if (!cloud) {
+          setCloudSyncState("offline");
+          return;
+        }
+
+        // ---- deterministic local-snapshot resolution --------------
+        // The local snapshot must never leak into another business's
+        // context. The owner tag records which business it belongs to.
+        const ownerTag = getCloudOwnerTag();
+        const cloudHasData =
+          cloud.accounts.length > 0 ||
+          cloud.transactions.length > 0 ||
+          cloud.categories.length > 0 ||
+          cloud.budgets.length > 0 ||
+          cloud.goals.length > 0 ||
+          cloud.plannedTransactions.length > 0 ||
+          cloud.activities.length > 0;
+
+        if (ownerTag !== active.id) {
+          if (cloudHasData) {
+            // New context exists in the cloud → cloud is authoritative.
+            // Wipe the foreign local snapshot first, then import.
+            clearTenantLocalData();
+            resetToStarterState();
+          } else if (ownerTag !== null) {
+            // Switching to a business with no cloud data → seed it from
+            // the standard starter dataset, never from another
+            // business's cached records.
+            clearTenantLocalData();
+            resetToStarterState();
+          }
+          // ownerTag === null && !cloudHasData → first cloud session:
+          // adopt the existing local snapshot as this business's
+          // starter dataset (the designed new-tenant flow).
+        }
+        // ownerTag === active.id → same-business reload: cloud is
+        // authoritative where present; local cache preserves offline
+        // work wherever the cloud has no rows yet.
+
+        replaceAllData({
+          accounts: cloud.accounts.length ? cloud.accounts : undefined,
+          transactions: cloud.transactions.length ? cloud.transactions : undefined,
+          categories: cloud.categories.length ? cloud.categories : undefined,
+          budgets: cloud.budgets.length ? cloud.budgets : undefined,
+          goals: cloud.goals.length ? cloud.goals : undefined,
+          plannedTransactions: cloud.plannedTransactions.length
+            ? cloud.plannedTransactions
+            : undefined,
+          activities: cloud.activities.length ? cloud.activities : undefined,
+        });
+        if (cloud.todos.length) setTodos(cloud.todos);
+        if (cloud.selectedYear) setSelectedYear(cloud.selectedYear);
+        if (cloud.currency && CURRENCIES.some((c) => c.code === cloud.currency)) {
+          setCurrency(cloud.currency);
+        }
+        setCloudOwnerTag(active.id);
+        setCloudSyncState("synced");
+      } catch {
+        if (!cancelled) setCloudSyncState("offline");
+      } finally {
+        cloudBusy.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Bootstrap runs once per session; every referenced setter is stable.
+  }, [hydrated]);
+
+  // ---- debounced push of local changes to the active business -------
+  useEffect(() => {
+    if (!hydrated || !activeBusiness || !isSupabaseConfigured()) return;
+    if (cloudBusy.current) return; // don't echo the bootstrap pull back
+    if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+    cloudSaveTimer.current = setTimeout(() => {
+      void pushBusinessState(activeBusiness.id, {
+        accounts,
+        transactions,
+        categories,
+        budgets,
+        goals,
+        plannedTransactions,
+        activities,
+        notifications,
+        todos,
+        selectedYear: effectiveYear,
+        currency,
+      }).then((ok) => setCloudSyncState(ok ? "synced" : "offline"));
+    }, 800);
+    return () => {
+      if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
+    };
+  }, [
+    hydrated,
+    activeBusiness,
+    accounts,
+    transactions,
+    categories,
+    budgets,
+    goals,
+    plannedTransactions,
+    activities,
+    notifications,
+    todos,
+    effectiveYear,
+    currency,
+  ]);
+
+    const value: DashboardContextValue = {
     accounts,
     transactions,
     categories,
@@ -409,8 +1156,26 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     goals,
     plannedTransactions,
     todos,
+    selectedYear: effectiveYear,
+    availableYears,
+    activities,
+    selectedDay,
+    notifications,
+    dashboardFilter,
+    currency,
+    baseCurrency,
+    displayTransactions,
+    displayAccounts,
+    displayGoals,
+    displayPlannedTransactions,
+    fxState,
+    activeBusiness,
+    cloudSyncState,
+    convertAmount: (value: number, from: string, to?: string): number =>
+      convertAmount(value, from, to ?? currency) ?? value,
+    replaceAllData,
     selectedPeriodId,
-    periods: seedPeriods,
+    periods,
     selectedPeriod,
     kpis,
     monthlyIncomeOutflow,
@@ -423,9 +1188,34 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     topSpendings,
     progress,
     savingsGoal,
+        filteredTransactions,
+    dayTransactions,
+    dayActivities,
+    activitiesForWeek,
+    todayISO: todayISOValue,
+    todayIncome,
+    todayOutflow,
+    todayNet,
+    budgetSummary,
+    upcomingRecurring,
+    notificationsCount,
+    derivedNotifications,
     setSelectedPeriodId,
+    setSelectedYear,
+    setSelectedDay,
+    setDashboardFilter,
+    setCurrency: changeCurrency,
+    clearDashboardFilter,
     toggleTodo,
     addTodo,
+    addActivity,
+    updateActivity,
+    updateActivityStatus,
+    deleteActivity,
+    addNotification,
+    dismissNotification,
+    markNotificationRead,
+    clearNotifications,
     updateGoal,
     updateAccountBalance,
     addTransaction,
@@ -442,7 +1232,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     deleteBudget,
     addGoal,
     deleteGoal,
-        addPlanned,
+    addPlanned,
     updatePlanned,
     deletePlanned,
     payPlannedTransaction,

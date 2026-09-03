@@ -36,7 +36,7 @@ export function CircularKPI({ label, value, percentage, color }: {
             cy="40"
             r={radius}
             fill="none"
-            stroke="#E2E0D9"
+            stroke="var(--color-border)"
             strokeWidth="5"
           />
           <circle

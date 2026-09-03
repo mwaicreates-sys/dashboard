@@ -1,32 +1,33 @@
 "use client";
 
 import { useDashboardData } from "@/lib/dashboardData";
+import { formatCurrencyFull } from "@/lib/currency";
 import { DetailHeader, MetricCard, BreakdownTable, ProgressBar } from "@/components/details/shared";
 
 export default function SavingsDetails() {
-  const { accounts, transactions, goals, selectedPeriod, savingsGoal, progress } = useDashboardData();
+  const { accounts, displayAccounts, displayTransactions, selectedPeriod, savingsGoal, progress } = useDashboardData();
 
-  const savingsAccounts = accounts.filter((a) => a.type === "savings");
-  const savingsTx = transactions.filter((t) => t.date >= (selectedPeriod?.startDate ?? "") && t.date <= (selectedPeriod?.endDate ?? "") && t.type === "transfer" && t.toAccountId && savingsAccounts.some((a) => a.id === t.toAccountId));
+  const savingsAccounts = displayAccounts.filter((a) => a.type === "savings");
+  const savingsTx = displayTransactions.filter((t) => t.date >= (selectedPeriod?.startDate ?? "") && t.date <= (selectedPeriod?.endDate ?? "") && t.type === "transfer" && t.toAccountId && savingsAccounts.some((a) => a.id === t.toAccountId));
 
   const totalSaved = savingsAccounts.reduce((sum, a) => sum + a.currentBalance, 0);
   const monthlySavings = savingsTx.reduce((sum, t) => sum + t.amount, 0);
 
   const rows = savingsAccounts.map((a) => ({
     Account: a.name,
-    Balance: `$${a.currentBalance.toLocaleString()}`,
+    Balance: formatCurrencyFull(a.currentBalance),
     Institution: a.institution ?? "—",
   }));
 
   return (
     <main className="flex-1 p-3 md:p-4">
-      <div className="mx-auto max-w-[1200px] rounded border border-border bg-white p-3 md:p-4 shadow-sm">
+      <div className="mx-auto max-w-[1200px] rounded border border-border bg-surface p-3 md:p-4 shadow-sm">
         <DetailHeader title="Savings Details" subtitle="Savings accounts, contributions, and goals" />
         <div className="mt-3 h-px bg-border" />
 
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          <MetricCard label="Total Saved" value={`$${totalSaved.toLocaleString()}`} sub={`${savingsAccounts.length} account(s)`} />
-          <MetricCard label="Period Savings" value={`$${monthlySavings.toLocaleString()}`} sub="Transfers into savings this period" />
+          <MetricCard label="Total Saved" value={formatCurrencyFull(totalSaved)} sub={`${savingsAccounts.length} account(s)`} />
+          <MetricCard label="Period Savings" value={formatCurrencyFull(monthlySavings)} sub="Transfers into savings this period" />
           <MetricCard label="Savings Goal" value={`${savingsGoal[0]?.value ?? 0}%`} sub="of emergency fund target" />
         </div>
 
@@ -45,7 +46,7 @@ export default function SavingsDetails() {
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[11px] text-primary-text">{p.label}</span>
                       <span className="text-[10px] text-muted-text tabular-nums">
-                        {p.value.toLocaleString()} / {p.total.toLocaleString()}
+                        {formatCurrencyFull(p.value)} / {formatCurrencyFull(p.total)}
                       </span>
                     </div>
                     <ProgressBar value={p.value} total={p.total} />
@@ -74,7 +75,7 @@ export default function SavingsDetails() {
                     <tr key={tx.id} className="border-b border-light-border last:border-b-0">
                       <td className="px-2 py-1.5 tabular-nums">{tx.date}</td>
                       <td className="px-2 py-1.5">{tx.description}</td>
-                      <td className="px-2 py-1.5 tabular-nums text-green-600">+${tx.amount.toLocaleString()}</td>
+                      <td className="px-2 py-1.5 tabular-nums text-green-600">{formatCurrencyFull(tx.amount)}</td>
                       <td className="px-2 py-1.5">{toAcc?.name ?? tx.toAccountId}</td>
                     </tr>
                   );

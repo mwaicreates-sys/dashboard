@@ -155,6 +155,7 @@ export function toTransaction(
     notes: data.notes,
     plannedId: data.plannedId,
     toAccountId: data.toAccountId,
+    currency: data.currency,
   };
 }
 
@@ -422,6 +423,7 @@ export function createFinanceDataStore(
         currentAmount: data.currentAmount,
         targetDate: data.targetDate,
         status: data.status ?? "active",
+        currency: data.currency,
       };
       state.goals.push(goal);
       return goal;
@@ -448,6 +450,7 @@ export function createFinanceDataStore(
         status: data.status ?? "pending",
         recurrence: data.recurrence,
         toAccountId: data.toAccountId,
+        currency: data.currency,
       };
       state.plannedTransactions.push(planned);
       return planned;
@@ -500,6 +503,7 @@ export function createFinanceDataStore(
           status: "cleared",
           plannedId: id,
           toAccountId: planned.toAccountId,
+          currency: planned.currency,
         },
         transactionIds()
       );

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import { DashboardProvider } from "@/lib/dashboardData";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -20,8 +21,8 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Annual 2025-2026 Dashboard",
-  description: "Annual financial dashboard",
+  title: "Budget — Year at a Glance",
+  description: "Premium personal finance dashboard",
 };
 
 export default function RootLayout({
@@ -33,9 +34,19 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('budgeting-dashboard-v2-theme');var d=t==='dark'||((!t||t==='system')&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark')}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
-        <DashboardProvider>{children}</DashboardProvider>
+        <ThemeProvider>
+          <DashboardProvider>{children}</DashboardProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

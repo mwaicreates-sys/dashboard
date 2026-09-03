@@ -1,6 +1,7 @@
 "use client";
 
 import { useDashboardData } from "@/lib/dashboardData";
+import { formatCurrencyFull } from "@/lib/currency";
 import { DetailHeader, MetricCard, BreakdownTable, ProgressBar } from "@/components/details/shared";
 import { GoalStatus } from "@/data/model/types";
 
@@ -13,41 +14,41 @@ const STATUS_STYLE: Record<GoalStatus, string> = {
 };
 
 export default function GoalsDetails() {
-  const { goals, accounts } = useDashboardData();
+  const { displayGoals, displayAccounts } = useDashboardData();
 
-  const totalTarget = goals.reduce((sum, g) => sum + g.targetAmount, 0);
-  const totalCurrent = goals.reduce((sum, g) => sum + g.currentAmount, 0);
-  const completedCount = goals.filter((g) => g.currentAmount >= g.targetAmount).length;
+  const totalTarget = displayGoals.reduce((sum, g) => sum + g.targetAmount, 0);
+  const totalCurrent = displayGoals.reduce((sum, g) => sum + g.currentAmount, 0);
+  const completedCount = displayGoals.filter((g) => g.currentAmount >= g.targetAmount).length;
   const overallPct = totalTarget > 0 ? Math.round((totalCurrent / totalTarget) * 100) : 0;
 
-  const savingsBalance = accounts
+  const savingsBalance = displayAccounts
     .filter((a) => a.type === "savings")
     .reduce((sum, a) => sum + a.currentBalance, 0);
-  const investmentBalance = accounts
+  const investmentBalance = displayAccounts
     .filter((a) => a.type === "investment")
     .reduce((sum, a) => sum + a.currentBalance, 0);
 
   return (
     <main className="flex-1 p-3 md:p-4">
-      <div className="mx-auto max-w-[1200px] rounded border border-border bg-white p-3 md:p-4 shadow-sm">
+      <div className="mx-auto max-w-[1200px] rounded border border-border bg-surface p-3 md:p-4 shadow-sm">
         <DetailHeader title="Goals Details" subtitle="Financial goals, progress, and status" />
         <div className="mt-3 h-px bg-border" />
 
         <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <MetricCard label="Total Goals" value={String(goals.length)} sub={`${completedCount} complete`} />
-          <MetricCard label="Overall Progress" value={`${overallPct}%`} sub={`$${totalCurrent.toLocaleString()} of $${totalTarget.toLocaleString()}`} />
-          <MetricCard label="Savings Held" value={`$${savingsBalance.toLocaleString()}`} sub="Backing savings goals" />
-          <MetricCard label="Investments Held" value={`$${investmentBalance.toLocaleString()}`} sub="Backing growth goals" />
+          <MetricCard label="Total Goals" value={String(displayGoals.length)} sub={`${completedCount} complete`} />
+          <MetricCard label="Overall Progress" value={`${overallPct}%`} sub={`${formatCurrencyFull(totalCurrent)} of ${formatCurrencyFull(totalTarget)}`} />
+          <MetricCard label="Savings Held" value={formatCurrencyFull(savingsBalance)} sub="Backing savings goals" />
+          <MetricCard label="Investments Held" value={formatCurrencyFull(investmentBalance)} sub="Backing growth goals" />
         </div>
 
         <div className="mt-3 space-y-2.5">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-secondary-text">All Goals</h3>
-          {goals.length === 0 ? (
+          {displayGoals.length === 0 ? (
             <p className="rounded border border-border bg-card p-3 text-[11px] text-muted-text">
               No goals yet — add one from Data Entry → Goals.
             </p>
           ) : (
-            goals.map((g) => {
+            displayGoals.map((g) => {
               const remaining = Math.max(g.targetAmount - g.currentAmount, 0);
               const pct = g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0;
               return (
@@ -60,9 +61,9 @@ export default function GoalsDetails() {
                   </div>
                   <div className="mt-1 flex items-center justify-between text-[10px] text-muted-text tabular-nums">
                     <span>
-                      ${g.currentAmount.toLocaleString()} of ${g.targetAmount.toLocaleString()}
+                      {formatCurrencyFull(g.currentAmount)} of {formatCurrencyFull(g.targetAmount)}
                       {" · "}
-                      {remaining > 0 ? `$${remaining.toLocaleString()} remaining` : "Goal reached"}
+                      {remaining > 0 ? `${formatCurrencyFull(remaining)} remaining` : "Goal reached"}
                     </span>
                     <span>Target: {g.targetDate}</span>
                   </div>
@@ -84,11 +85,11 @@ export default function GoalsDetails() {
           <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">Summary Table</h3>
           <BreakdownTable
             headers={["Goal", "Current", "Target", "Remaining", "%", "Target Date", "Status"]}
-            rows={goals.map((g) => ({
+            rows={displayGoals.map((g) => ({
               Goal: g.name,
-              Current: `$${g.currentAmount.toLocaleString()}`,
-              Target: `$${g.targetAmount.toLocaleString()}`,
-              Remaining: `$${Math.max(g.targetAmount - g.currentAmount, 0).toLocaleString()}`,
+              Current: formatCurrencyFull(g.currentAmount),
+              Target: formatCurrencyFull(g.targetAmount),
+              Remaining: formatCurrencyFull(Math.max(g.targetAmount - g.currentAmount, 0)),
               "%": `${g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0}%`,
               "Target Date": g.targetDate,
               Status: g.status,

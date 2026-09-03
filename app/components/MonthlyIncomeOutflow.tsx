@@ -11,6 +11,7 @@ import {
   Legend,
 } from "recharts";
 import { useDashboardData } from "@/lib/dashboardData";
+import { formatCurrencyCompact } from "@/lib/currency";
 
 export function MonthlyIncomeOutflow() {
   const { monthlyIncomeOutflow } = useDashboardData();
@@ -22,29 +23,36 @@ export function MonthlyIncomeOutflow() {
       </h3>
       <ResponsiveContainer width="100%" height={150}>
         <BarChart data={monthlyIncomeOutflow} barGap={2}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E2E0D9" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 9, fill: "#999999" }}
+            tick={{ fontSize: 9, fill: "var(--chart-axis)" }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 9, fill: "#999999" }}
-            width={32}
+            tick={{ fontSize: 9, fill: "var(--chart-axis)" }}
+            width={44}
+            tickFormatter={(v) => formatCurrencyCompact(Number(v))}
           />
           <Tooltip
+            formatter={(value) => formatCurrencyCompact(Number(value))}
+
             contentStyle={{
-              backgroundColor: "#FAFAFA",
-              border: "1px solid #E2E0D9",
+              backgroundColor: "var(--tooltip-bg)",
+              border: "1px solid var(--tooltip-border)",
               borderRadius: "4px",
               fontSize: "11px",
+              color: "var(--color-primary-text)",
             }}
           />
           <Legend
             wrapperStyle={{ fontSize: "9px", paddingTop: "2px" }}
+            formatter={(value) => (
+              <span style={{ color: "var(--color-secondary-text)" }}>{value}</span>
+            )}
           />
           <Bar
             dataKey="income"
