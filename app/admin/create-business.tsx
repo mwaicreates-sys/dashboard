@@ -91,9 +91,7 @@ export function CreateBusinessModal({ open, onClose }: { open: boolean; onClose:
       }
 
       if (ownerEmail.trim()) {
-        // Generate the owner's activation code. The RPC returns a TEXT scalar,
-        // so `data` IS the activation-code string itself.
-        const { data: activationCode, error: activationError } = await client.rpc(
+        const { data: response, error: activationError } = await client.rpc(
           "generate_owner_activation_code",
           {
             p_business_id: newBusinessId,
@@ -106,12 +104,19 @@ export function CreateBusinessModal({ open, onClose }: { open: boolean; onClose:
           return;
         }
 
-        if (typeof activationCode !== "string" || activationCode.length === 0) {
+        let generatedCode: string | null = null;
+        if (typeof response === "object" && response !== null && "activation_code" in response) {
+          generatedCode = response.activation_code as string;
+        } else if (typeof response === "string" && response.length > 0) {
+          generatedCode = response;
+        }
+
+        if (!generatedCode) {
           setError("Business created, but the activation service returned no code.");
           return;
         }
 
-        setActivationCode(activationCode);
+        setActivationCode(generatedCode);
         setLoginUrl(
           typeof window !== "undefined" ? `${window.location.origin}/login` : "/login"
         );

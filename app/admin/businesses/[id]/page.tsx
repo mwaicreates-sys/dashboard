@@ -26,6 +26,7 @@ export default function BusinessDetailPage() {
   const [tab, setTab] = useState<TabId>("overview");
   const [copiedCode, setCopiedCode] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -57,6 +58,7 @@ export default function BusinessDetailPage() {
   const generateNewCode = async () => {
     if (!business?.ownerEmail) return;
     setGeneratingCode(true);
+    setGenerationError(null);
     
     const client = getSupabaseBrowserClient();
     if (!client) {
@@ -71,9 +73,9 @@ export default function BusinessDetailPage() {
       });
 
       if (rpcError) {
+        setGenerationError("Could not generate access code. Please try again.");
         console.error("generate_owner_activation_code error:", rpcError);
       } else if (typeof response === "object" && response !== null && "activation_code" in response) {
-        // Update the business data with the new access code
         if (data && data.business) {
           setData({
             business: {
@@ -84,8 +86,22 @@ export default function BusinessDetailPage() {
             activities: data.activities,
           });
         }
+      } else if (typeof response === "string" && response.length > 0) {
+        if (data && data.business) {
+          setData({
+            business: {
+              ...data.business,
+              accessCode: response,
+            },
+            members: data.members,
+            activities: data.activities,
+          });
+        }
+      } else {
+        setGenerationError("Could not generate access code. Please try again.");
       }
     } catch (e) {
+      setGenerationError("Could not generate access code. Please try again.");
       console.error("Error generating code:", e);
     } finally {
       setGeneratingCode(false);
@@ -164,6 +180,7 @@ export default function BusinessDetailPage() {
           copiedCode={copiedCode}
           onGenerateCode={generateNewCode}
           generatingCode={generatingCode}
+          generationError={generationError}
         /> 
       ) : null}
       {tab === "activity" ? <ActivitySection data={data} /> : null}
@@ -190,12 +207,14 @@ function OverviewSection({
   copiedCode,
   onGenerateCode,
   generatingCode,
+  generationError,
 }: { 
   data: BusinessDetailData; 
   onCopyCode: () => void; 
   copiedCode: boolean;
   onGenerateCode: () => void;
   generatingCode: boolean;
+  generationError: string | null;
 }) {
   const b = data.business;
   if (!b) return null;
@@ -208,7 +227,7 @@ function OverviewSection({
         <DetailRow label="Created" value={formatDate(b.created_at)} />
       </dl>
       <div className="rounded-xl border border-border bg-card p-3">
-        <div className="text-[11px] uppercase tracking-wider text-muted-text mb-1">Access Code</div>
+        <div className="text-[11px] uppercase tracking-wider text-muted-text mb-1">Business Access Code</div>
         {b.accessCode ? (
           <div className="flex items-center gap-2">
             <code className="flex-1 rounded-xl bg-surface px-3 py-2 text-[13px] font-semibold text-primary-text break-all">
@@ -224,14 +243,22 @@ function OverviewSection({
           </div>
         ) : (
           b.ownerEmail ? (
-            <button
-              type="button"
-              onClick={onGenerateCode}
-              disabled={generatingCode}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
-            >
-              {generatingCode ? "Generating…" : "Generate Access Code"}
-            </button>
+            <>
+              <div className="mb-2 text-[13px] text-muted-text">No access code generated</div>
+              {generationError && (
+                <p role="alert" className="mb-2 text-[11px] font-medium leading-relaxed text-orange">
+                  {generationError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={onGenerateCode}
+                disabled={generatingCode}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
+              >
+                {generatingCode ? "Generating…" : "Generate Access Code"}
+              </button>
+            </>
           ) : (
             <div className="text-[13px] text-muted-text">No owner email assigned. Cannot generate access code.</div>
           )
