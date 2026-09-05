@@ -58,7 +58,7 @@ export default function SavingsDetails() {
 
         <div className="mt-3">
           <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">Recent Savings Transactions</h3>
-          <div className="overflow-hidden rounded border border-border">
+          <div className="overflow-x-auto rounded border border-border">
             <table className="w-full text-left text-[11px]">
               <thead>
                 <tr className="border-b border-border bg-card">

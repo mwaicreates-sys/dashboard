@@ -58,7 +58,7 @@ export function BottomNav({ active, onChange }: { active: TabId; onChange: (tab:
               aria-current={isActive ? "page" : undefined}
               aria-label={tab.description}
               className={`group flex min-w-[60px] select-none flex-col items-center gap-[3px] rounded-xl px-2.5 pb-1 pt-[7px] outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.95] ${
-                isActive ? "text-blue" : "text-muted-text hover:text-secondary-text"
+                isActive ? "text-blue" : "text-secondary-text hover:text-primary-text"
               }`}
             >
               <Icon className="h-5 w-5" strokeWidth={isActive ? 2.1 : 1.8} />

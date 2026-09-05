@@ -37,7 +37,7 @@ export function GoalsProgress() {
           </span>
           <div>
             <h2 className="text-sm font-semibold text-primary-text">Goals</h2>
-                        <p className="text-[11px] text-muted-text">Targets you&apos;re working toward</p>
+                        <p className="text-[11px] text-muted-text">Track progress toward targets</p>
           </div>
         </div>
         <button
@@ -52,7 +52,7 @@ export function GoalsProgress() {
 
       {displayGoals.length === 0 && !adding ? (
         <p className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-4 text-center text-[11px] text-muted-text">
-          No goals yet. Add a savings target to see progress here.
+          No goals yet. Add a target to track progress.
         </p>
       ) : (
         <ul className="space-y-3">

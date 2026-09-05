@@ -122,57 +122,70 @@ export function ActivityTab() {
           <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
             Activity
           </p>
-          <h1 className="mt-1 font-serif text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
+          <h1 className="mt-1 text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
             Day-by-day
           </h1>
           <p className="mt-1.5 text-xs text-secondary-text">
-            {pendingCount} open · {doneCount} completed — add what happened, when it happened
+            {pendingCount} open · {doneCount} completed
           </p>
         </div>
       </header>
 
-      {/* Quick add */}
-      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-3 md:p-4">
-        <div className="flex flex-col gap-2 sm:flex-row">
+      {/* Primary Entry area — dominant on mobile */}
+      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-4 md:p-5">
+        <label className="mb-2 block md:mb-3">
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-text">
+            What did you do today?
+          </span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="What did you do today?"
+            placeholder="Add a new activity"
             aria-label="Activity title"
-            className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-sm text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
+            className="mt-1.5 h-12 w-full rounded-xl border border-border bg-card px-3.5 text-base font-medium text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
           />
-          <div className="flex items-center gap-2">
+        </label>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-text">Date</span>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               aria-label="Activity date"
-              className="h-10 rounded-xl border border-border bg-card px-3 text-xs text-primary-text outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue/60"
+              className="mt-1.5 h-12 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-primary-text outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue/60"
             />
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-text">Due date</span>
             <input
               type="date"
               value={addDue}
               onChange={(e) => setAddDue(e.target.value)}
               aria-label="Due date (optional)"
               title="Due date (optional)"
-              className={`h-10 rounded-xl border bg-card px-3 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue/60 ${
+              className={`mt-1.5 h-12 w-full rounded-xl border bg-card px-3.5 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-blue/60 ${
                 addDue ? "border-border text-primary-text" : "border-dashed border-border text-muted-text"
               }`}
             />
-            <button
-              type="submit"
-              aria-label="Add activity"
-              className="flex h-10 w-11 items-center justify-center rounded-xl bg-blue text-white transition-colors hover:bg-blue/90 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.97]"
-            >
-              <PlusIcon className="h-5 w-5" strokeWidth={2.2} />
-            </button>
-          </div>
+          </label>
         </div>
-        <div className="mt-2 flex items-center justify-between">
+
+        <button
+          type="submit"
+          aria-label="Add activity"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue text-sm font-semibold text-white transition-colors hover:bg-blue/90 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.97] sm:w-auto sm:px-6"
+        >
+          <PlusIcon className="h-5 w-5" strokeWidth={2.2} />
+          Add
+        </button>
+
+        <div className="mt-2.5 flex items-center justify-between">
           <button
             type="button"
             onClick={() => setShowNotes((s) => !s)}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium text-secondary-text transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-blue/60"
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-secondary-text transition-colors hover:bg-card focus-visible:ring-2 focus-visible:ring-blue/60"
           >
             <NotesIcon className="h-3.5 w-3.5" />
             {showNotes ? "Hide" : "Add"} notes
@@ -186,14 +199,14 @@ export function ActivityTab() {
             rows={2}
             placeholder="Details, context, follow-ups…"
             aria-label="Activity notes"
-            className="mt-2 w-full rounded-xl border border-border bg-card px-3 py-2 text-xs text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
+            className="mt-2 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-xs text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
           />
         ) : null}
       </form>
 
-      {/* Filters */}
+      {/* Filters — secondary, below Entry */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1 rounded-full border border-border bg-surface p-0.5">
+        <div className="-mx-1 flex flex-nowrap items-center gap-1 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible">
           {(
             [
               { id: "all", label: "All" },
@@ -208,10 +221,10 @@ export function ActivityTab() {
               key={f.id}
               type="button"
               onClick={() => setFilter(f.id)}
-              className={`rounded-full px-3.5 py-1.5 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-blue/60 ${
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:ring-blue/60 ${
                 filter === f.id
                   ? "bg-primary-text/[0.07] text-primary-text dark:bg-white/10"
-                  : "text-muted-text hover:text-secondary-text"
+                  : "text-secondary-text hover:text-primary-text"
               }`}
             >
               {f.label}
@@ -226,7 +239,7 @@ export function ActivityTab() {
         <div className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
           <p className="text-sm font-medium text-secondary-text">Nothing here yet</p>
           <p className="mt-1 text-xs text-muted-text">
-            Add your first activity above — keep it quick, keep it real.
+            Add your first activity above.
           </p>
         </div>
       ) : (

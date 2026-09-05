@@ -46,7 +46,10 @@ export interface BusinessInfo {
   name: string;
   slug: string | null;
   currency: string;
-  role: "owner" | "admin" | "member";
+  /** "platform-admin" is assigned ONLY when an authenticated platform
+   *  admin is inspecting the workspace (migration 007). It never comes
+   *  from business_members and grants nothing beyond RLS read access. */
+  role: "owner" | "admin" | "member" | "platform-admin";
 }
 
 /** Cloud sync session status (surfaced through the dashboard context). */
@@ -375,7 +378,7 @@ const plannedToRow = (businessId: string, p: PlannedTransaction): Row => ({
   currency: p.currency ?? null,
 });
 
-const activityToRow = (businessId: string, a: Activity): Row => ({
+const activityToRow = (businessId: string, a: Activity, actorUserId?: string | null): Row => ({
   ...baseCols(businessId, a.id),
   title: a.title,
   date: a.date,
@@ -384,6 +387,7 @@ const activityToRow = (businessId: string, a: Activity): Row => ({
   due_date: a.dueDate ?? null,
   priority: a.priority ?? null,
   completed_at: a.completedAt ?? null,
+  actor_user_id: actorUserId,
 });
 
 const notificationToRow = (businessId: string, n: Notification): Row => ({
@@ -528,6 +532,9 @@ export async function pushBusinessState(
   const client = getSupabaseBrowserClient();
   if (!client) return false;
   try {
+    const { data: auth } = await client.auth.getUser();
+    const actorUserId = auth?.user?.id || null;
+    
     const upsertOpts = { onConflict: "business_id,local_id" } as const;
     const results = await Promise.all([
       client
@@ -569,7 +576,7 @@ export async function pushBusinessState(
       client
         .from("activities")
         .upsert(
-          state.activities.map((a) => activityToRow(businessId, a)),
+          state.activities.map((a) => activityToRow(businessId, a, actorUserId)),
           upsertOpts
         ),
       client

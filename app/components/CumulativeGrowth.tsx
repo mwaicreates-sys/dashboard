@@ -20,7 +20,7 @@ export function CumulativeGrowth() {
       <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">
         Cumulative Growth
       </h3>
-      <ResponsiveContainer width="100%" height={130}>
+      <ResponsiveContainer width="100%" height={110}>
         <AreaChart data={cumulativeGrowth}>
           <defs>
             <linearGradient id="cumulativeGradient" x1="0" y1="0" x2="0" y2="1">

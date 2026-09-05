@@ -121,19 +121,55 @@ export function calculateCumulativeGrowth(
   });
 }
 
-export function calculateNetWorthGrowth(accounts: Account[]): HeaderChartRow[] {
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const checking = accounts.find((a) => a.type === "checking")?.currentBalance || 0;
-  const savings = accounts.find((a) => a.type === "savings")?.currentBalance || 0;
-  const investment = accounts.find((a) => a.type === "investment")?.currentBalance || 0;
-  const debt = accounts.filter((a) => a.type === "credit" || a.type === "loan").reduce((s, a) => s + Math.abs(a.currentBalance), 0);
-  const baseNetWorth = checking + savings + investment - debt;
+/**
+ * Real monthly net-worth growth for the selected period.
+ *
+ * Net worth at any point = checking + savings + investment − debt (current
+ * balances). We reconstruct the month-by-month progression from:
+ *   - each account's opening balance (start of period), and
+ *   - the cumulative net impact of posted income/expense transactions.
+ *
+ * Transfers are excluded from the monthly delta because they merely move
+ * money between accounts (net-zero on total net worth), so their only effect
+ * on account balances is already captured via the opening→current delta.
+ *
+ * Returns [] when the business has NO accounts — the caller renders an empty
+ * state rather than a synthetic curve. This guarantees a brand-new/empty
+ * business never shows "progress" fabricated from sine-noise or another
+ * business's cached values.
+ */
+export function calculateNetWorthGrowth(
+  accounts: Account[],
+  transactions: Transaction[],
+  period: PeriodConfig
+): HeaderChartRow[] {
+  if (accounts.length === 0) return [];
 
-  return months.map((month, i) => {
-    const seasonal = Math.sin((i / 11) * Math.PI * 2) * 15;
-    const trend = i * 8;
-    const noise = Math.sin(i * 1.7) * 10 + Math.cos(i * 2.3) * 5;
-    return { month, value: Math.round(baseNetWorth / 1000 + trend + seasonal + noise) };
+  const monthlyNet = new Map<string, number>();
+  for (const m of period.months) monthlyNet.set(m, 0);
+
+  for (const t of transactions) {
+    // Only income and expense move total net worth. Transfers shift money
+    // between accounts and net to zero, so they are intentionally excluded.
+    if (t.type === "transfer") continue;
+    const month = t.date.slice(0, 7); // "YYYY-MM"
+    if (!monthlyNet.has(month)) continue;
+    const sign = t.type === "income" ? 1 : -1;
+    monthlyNet.set(month, (monthlyNet.get(month) ?? 0) + sign * t.amount);
+  }
+
+  // Opening net worth at the start of the period (opening balances).
+  const openingNW = accounts.reduce((sum, a) => {
+    const bal = a.type === "credit" || a.type === "loan" ? -Math.abs(a.openingBalance) : a.openingBalance;
+    return sum + bal;
+  }, 0);
+
+  let cumulative = 0;
+  return period.months.map((month) => {
+    cumulative += monthlyNet.get(month) ?? 0;
+    const value = openingNW + cumulative;
+    const label = new Date(month + "-01").toLocaleString("en-US", { month: "short" });
+    return { month: label, value: Math.round(value) };
   });
 }
 

@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
   fetchBusinessesForUser,
@@ -23,6 +24,8 @@ import {
   type BusinessInfo,
 } from "@/lib/cloudSync";
 import { useDashboardData } from "@/lib/dashboardData";
+import { clearAdminViewing } from "@/lib/platformAdmin";
+import { routeAfterSignIn } from "@/lib/authRouting";
 
 type SyncCopy = { dot: string; text: string };
 
@@ -38,7 +41,6 @@ export function CloudAccountCard() {
   const { activeBusiness, cloudSyncState } = useDashboardData();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -76,31 +78,20 @@ export function CloudAccountCard() {
     setBusy(true);
     setMessage(null);
     try {
-      if (mode === "signin") {
-        const { error } = await client.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (error) {
-          setMessage(error.message);
-        } else {
-          window.location.reload(); // re-run cloud bootstrap with the session
-          return;
-        }
+      // Sign-in only. Account creation happens exclusively through the
+      // platform-admin provisioning flow (email + access code on /login);
+      // this card never signs users up.
+      const { error } = await client.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) {
+        setMessage(error.message);
       } else {
-        const { data, error } = await client.auth.signUp({
-          email: email.trim(),
-          password,
-        });
-        if (error) {
-          setMessage(error.message);
-        } else if (data.session) {
-          window.location.reload(); // confirmation disabled — session ready
-          return;
-        } else {
-          setMessage("Account created — check your inbox to confirm, then sign in.");
-          setMode("signin");
-        }
+        // Re-enter through the DB-decided role router: platform admins
+        // → /admin, business users → workspace or the selector.
+        await routeAfterSignIn();
+        return;
       }
     } catch {
       setMessage("Could not reach the authentication service.");
@@ -118,7 +109,11 @@ export function CloudAccountCard() {
     clearTenantLocalData();
     setCloudOwnerTag(null);
     clearActiveBusinessId();
-    window.location.reload();
+    clearAdminViewing();
+    // Land on the public login page — a signed-out visitor can no longer
+    // reach any protected route (proxy.ts enforces the rest).
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/login");
   };
 
   const switchBusiness = (id: string) => {
@@ -167,6 +162,13 @@ export function CloudAccountCard() {
             )}
           </div>
 
+          <Link
+            href="/workspaces"
+            className="mt-2 block text-center text-[10px] font-medium text-muted-text transition-colors hover:text-primary-text"
+          >
+            Open workspace selector
+          </Link>
+
           <p
             role="status"
             aria-live="polite"
@@ -210,7 +212,7 @@ export function CloudAccountCard() {
               </span>
               <input
                 type="password"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => {
@@ -234,20 +236,7 @@ export function CloudAccountCard() {
             disabled={busy}
             className="mt-3 h-10 w-full rounded-xl bg-blue text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-50"
           >
-            {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setMessage(null);
-            }}
-            className="mt-2 w-full text-center text-[11px] font-medium text-muted-text transition-colors hover:text-primary-text"
-          >
-            {mode === "signin"
-              ? "New here? Create a business account"
-              : "Already have an account? Sign in"}
+            {busy ? "Please wait…" : "Sign in"}
           </button>
         </>
       )}

@@ -21,8 +21,7 @@
   --color-blue: #3B7A9E;
   --color-pink: #D96B82;
   --color-green: #5B8C5A;
-  --font-serif: var(--font-playfair);
-  --font-sans: var(--font-geist-sans);
+  --font-inter: var(--font-inter);
 }
 
 /* Chart + tooltip tokens (consumed by the Recharts components). */
@@ -58,9 +57,24 @@ html {
 body {
   background: var(--color-cream);
   color: var(--color-primary-text);
-  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Admin dropdown / popover entrance — subtle scale + fade. */
+@keyframes dropdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.dropdown-enter {
+  animation: dropdown-enter 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 /* Subtle entrance for tab switches. The `to` keyframe must NOT persist a

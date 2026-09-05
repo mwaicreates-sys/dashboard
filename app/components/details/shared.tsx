@@ -5,7 +5,7 @@ import Link from "next/link";
 export function BackToDashboard() {
   return (
     <Link
-      href="/"
+      href="/dashboard"
       className="rounded border border-border bg-card px-2 py-1 text-[11px] text-secondary-text hover:bg-light-border focus:outline-none focus:ring-1 focus:ring-blue"
     >
       ← Dashboard
@@ -17,7 +17,7 @@ export function DetailHeader({ title, subtitle }: { title: string; subtitle?: st
   return (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
-        <h1 className="font-serif text-2xl font-semibold text-primary-text leading-tight">
+        <h1 className="text-2xl font-semibold text-primary-text leading-tight">
           {title}
         </h1>
         {subtitle ? (
@@ -47,7 +47,7 @@ export function BreakdownTable({
   rows: Array<Record<string, string | number>>;
 }) {
   return (
-    <div className="overflow-hidden rounded border border-border">
+    <div className="overflow-x-auto rounded border border-border">
       <table className="w-full text-left text-[11px]">
         <thead>
           <tr className="border-b border-border bg-card">

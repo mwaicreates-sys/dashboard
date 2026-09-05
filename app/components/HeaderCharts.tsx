@@ -18,13 +18,31 @@ import { formatCurrencyCompact } from "@/lib/currency";
 export function NetWorthGrowth() {
   const { netWorthGrowth } = useDashboardData();
 
+  // Empty business: show an honest empty state instead of a fabricated curve.
+  if (!netWorthGrowth || netWorthGrowth.length === 0) {
+    return (
+      <Link
+        href="/growth"
+        aria-label="Net Worth Growth — view growth details"
+        className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
+      >
+        <h3 className="font-inter text-[12px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+          Net Worth Growth
+        </h3>
+        <div className="mt-2 flex h-[70px] items-center justify-center rounded border border-dashed border-border bg-card/30 text-[13px] text-secondary-text">
+          No net worth data yet
+        </div>
+      </Link>
+    );
+  }
+
   return (
     <Link
       href="/growth"
       aria-label="Net Worth Growth — view growth details"
       className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
     >
-      <h3 className="text-[9px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+      <h3 className="font-inter text-[12px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
         Net Worth Growth
       </h3>
       <ResponsiveContainer width="100%" height={70}>
@@ -90,7 +108,7 @@ export function IncomeStreamStack() {
       aria-label="Income Stream Stack — view income details"
       className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
     >
-      <h3 className="text-[9px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
         Income Stream Stack
       </h3>
       <ResponsiveContainer width="100%" height={70}>

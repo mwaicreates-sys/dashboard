@@ -108,7 +108,7 @@ function Header({ day, onClose }: { day: string; onClose: () => void }) {
     <header className="mb-4 flex items-start justify-between gap-3">
       <div>
         <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">Day</p>
-        <h2 className="mt-0.5 font-serif text-2xl font-semibold leading-tight text-primary-text">
+        <h2 className="mt-0.5 text-2xl font-semibold leading-tight text-primary-text">
           {relativeDayLabel(day)}
         </h2>
         <p className="text-xs text-secondary-text">{shortDayLabel(day)}</p>

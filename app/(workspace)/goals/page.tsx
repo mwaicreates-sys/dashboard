@@ -45,7 +45,7 @@ export default function GoalsDetails() {
           <h3 className="text-xs font-semibold uppercase tracking-wider text-secondary-text">All Goals</h3>
           {displayGoals.length === 0 ? (
             <p className="rounded border border-border bg-card p-3 text-[11px] text-muted-text">
-              No goals yet — add one from Data Entry → Goals.
+              No goals yet. Add one from the Entry tab.
             </p>
           ) : (
             displayGoals.map((g) => {

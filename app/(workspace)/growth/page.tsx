@@ -36,21 +36,44 @@ export default function GrowthDetails() {
   const change = currentNetWorth - startingNetWorth;
   const growthPct = startingNetWorth !== 0 ? Math.round((change / Math.abs(startingNetWorth)) * 100) : 0;
 
-  const accountRows = displayAccounts.map((a) => ({
-    Account: a.name,
-    Type: a.type.charAt(0).toUpperCase() + a.type.slice(1),
-    Opening: formatCurrencyFull(a.openingBalance),
-    Current: formatCurrencyFull(a.currentBalance),
-    Change: formatCurrencyFull(a.currentBalance - a.openingBalance),
-  }));
+  const hasAccounts = displayAccounts.length > 0;
 
-  const monthRows = monthlyIncomeOutflow.map((m, i) => ({
-    Month: m.month,
-    Income: formatCurrencyFull(m.income),
-    Outflow: formatCurrencyFull(m.outflow),
-    Net: formatCurrencyFull(m.income - m.outflow),
-    Cumulative: cumulativeGrowth[i] ? `${cumulativeGrowth[i].value}` : "—",
-  }));
+  const accountRows = hasAccounts
+    ? displayAccounts.map((a) => ({
+        Account: a.name,
+        Type: a.type.charAt(0).toUpperCase() + a.type.slice(1),
+        Opening: formatCurrencyFull(a.openingBalance),
+        Current: formatCurrencyFull(a.currentBalance),
+        Change: formatCurrencyFull(a.currentBalance - a.openingBalance),
+      }))
+    : [];
+
+  const monthRows = hasAccounts
+    ? monthlyIncomeOutflow.map((m, i) => ({
+        Month: m.month,
+        Income: formatCurrencyFull(m.income),
+        Outflow: formatCurrencyFull(m.outflow),
+        Net: formatCurrencyFull(m.income - m.outflow),
+        Cumulative: cumulativeGrowth[i] ? `${cumulativeGrowth[i].value}` : "—",
+      }))
+    : [];
+
+  if (!hasAccounts) {
+    return (
+      <main className="flex-1 p-3 md:p-4">
+        <div className="mx-auto max-w-[1200px]">
+          <DetailHeader title="Growth Details" subtitle="Net worth progression and cumulative growth" />
+          <div className="mt-3 h-px bg-border" />
+          <div className="mt-6 rounded-2xl border border-dashed border-border bg-surface py-12 text-center">
+            <h3 className="text-base font-semibold text-primary-text">No net worth data yet</h3>
+            <p className="mt-1 max-w-sm text-[11px] text-secondary-text">
+              Add accounts and transactions to see net worth progression.
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 p-3 md:p-4">

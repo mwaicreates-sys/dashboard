@@ -87,7 +87,7 @@ export function WeeksTab() {
           <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
             Weeks
           </p>
-          <h1 className="mt-1 font-serif text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
+          <h1 className="mt-1 text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
             {selectedYear}
           </h1>
           <p className="mt-1.5 text-xs text-secondary-text">
@@ -172,7 +172,7 @@ export function WeeksTab() {
                               className="group flex min-w-0 flex-1 items-baseline gap-2 rounded-lg px-1 py-0.5 text-left outline-none transition-colors hover:bg-card/60 focus-visible:ring-2 focus-visible:ring-blue/60"
                             >
                               {isToday ? (
-                                <span className="shrink-0 rounded-full bg-blue/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wide text-blue">
+                                <span className="shrink-0 rounded-full bg-blue/10 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-blue">
                                   Today
                                 </span>
                               ) : null}

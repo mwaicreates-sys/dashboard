@@ -21,7 +21,7 @@ export function MonthlyIncomeOutflow() {
       <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">
         Monthly Income vs Outflow
       </h3>
-      <ResponsiveContainer width="100%" height={150}>
+      <ResponsiveContainer width="100%" height={120}>
         <BarChart data={monthlyIncomeOutflow} barGap={2}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis

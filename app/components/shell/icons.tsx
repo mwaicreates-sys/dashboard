@@ -326,3 +326,4 @@ export function InvestmentsCatIcon(p: P) {
     </Svg>
   );
 }
+

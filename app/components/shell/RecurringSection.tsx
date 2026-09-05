@@ -52,8 +52,7 @@ export function RecurringSection() {
       </div>
 
       <p className="mb-3 text-[10px] leading-relaxed text-muted-text">
-        These are planned expectations — not recorded money. Paying one creates a real transaction; nothing is
-        counted until then.
+        Planned items only count once paid.
       </p>
 
       {upcoming.length === 0 ? (
@@ -69,15 +68,15 @@ export function RecurringSection() {
                 p.type === "income" ? "border-green/25 bg-green/[0.04]" : "border-border bg-card/40"
               }`}
             >
-              <div className="flex h-8 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-surface text-center leading-none">
-                <span className="text-[8px] uppercase tracking-wide text-muted-text">{shortDayLabel(p.date).split(",")[0]}</span>
-                <span className="text-[10px] font-semibold tabular-nums text-primary-text">{p.date.slice(8)}</span>
-              </div>
+                <div className="flex h-8 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-surface text-center leading-none">
+                  <span className="text-[9px] uppercase tracking-wide text-muted-text">{shortDayLabel(p.date).split(",")[0]}</span>
+                  <span className="text-[10px] font-semibold tabular-nums text-primary-text">{p.date.slice(8)}</span>
+                </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <p className="truncate text-[12px] font-medium text-primary-text">{p.description}</p>
                   {p.recurrence && p.recurrence !== "once" ? (
-                    <span className="shrink-0 rounded-full bg-teal/15 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-teal">
+                    <span className="shrink-0 rounded-full bg-teal/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-teal">
                       {RECURRENCE_LABEL[p.recurrence]}
                     </span>
                   ) : null}

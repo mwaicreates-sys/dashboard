@@ -65,6 +65,7 @@ import {
   type CloudSyncState,
 } from "@/lib/cloudSync";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
+import { checkPlatformAdmin, clearAdminViewing, getAdminViewing } from "@/lib/platformAdmin";
 
 interface DashboardState {
   accounts: Account[];
@@ -196,10 +197,10 @@ interface DashboardContextValue extends DashboardState {
     plannedTransactions?: PlannedTransaction[];
     activities?: Activity[];
   }) => void;
-  addAccount: (data: Omit<Account, "id" | "currentBalance">) => void;
+  addAccount: (data: Omit<Account, "id" | "currentBalance">) => string;
   updateAccount: (id: string, patch: Partial<NewEntity<Account>>) => void;
   deleteAccount: (id: string) => void;
-  addCategory: (data: NewEntity<Category>) => void;
+  addCategory: (data: NewEntity<Category>) => string;
   updateCategory: (id: string, patch: Partial<NewEntity<Category>>) => void;
   deleteCategory: (id: string) => void;
   addBudget: (data: NewEntity<Budget>) => void;
@@ -269,18 +270,26 @@ const recomputeBudgetActuals = (budgets: Budget[], transactions: Transaction[]):
   }));
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
-  // Deterministic SSR: the first render (server AND client) uses seed
-  // defaults; persisted state is loaded once after mount. This keeps the
-  // server HTML identical to the first client render (no hydration drift),
-  // while saved user data still wins right after hydration.
+  // Cloud mode: Supabase configured. In a business workspace the ONLY data
+  // source is that business's cloud state — the single-user demo (seed)
+  // dataset must never render, even for a frame. The seed dataset remains
+  // the starter only for the unconfigured local-only demo mode.
+  const cloudEnabled = isSupabaseConfigured();
+
+  // Deterministic SSR: the first render (server AND client) uses the
+  // starter defaults; persisted state is loaded once after mount. This
+  // keeps the server HTML identical to the first client render (no
+  // hydration drift), while saved user data still wins after hydration.
   const [hydrated, setHydrated] = useState(false);
-  const [accounts, setAccounts] = useState<Account[]>(seedAccounts);
-  const [transactions, setTransactions] = useState<Transaction[]>(seedTransactions);
-  const [categories, setCategories] = useState<Category[]>(seedCategories);
-  const [budgets, setBudgets] = useState<Budget[]>(seedBudgets);
-  const [goals, setGoals] = useState<Goal[]>(seedGoals);
-  const [plannedTransactions, setPlannedTransactions] = useState<PlannedTransaction[]>(seedPlanned);
-  const [todos, setTodos] = useState<TodoRow[]>(initialTodos);
+  const [accounts, setAccounts] = useState<Account[]>(cloudEnabled ? [] : seedAccounts);
+  const [transactions, setTransactions] = useState<Transaction[]>(cloudEnabled ? [] : seedTransactions);
+  const [categories, setCategories] = useState<Category[]>(cloudEnabled ? [] : seedCategories);
+  const [budgets, setBudgets] = useState<Budget[]>(cloudEnabled ? [] : seedBudgets);
+  const [goals, setGoals] = useState<Goal[]>(cloudEnabled ? [] : seedGoals);
+  const [plannedTransactions, setPlannedTransactions] = useState<PlannedTransaction[]>(
+    cloudEnabled ? [] : seedPlanned
+  );
+  const [todos, setTodos] = useState<TodoRow[]>(cloudEnabled ? [] : initialTodos);
   const [selectedYear, setSelectedYear] = useState<number>(DEFAULT_YEAR);
   const [currency, setCurrency] = useState<CurrencyCode>(DEFAULT_CURRENCY);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -415,15 +424,18 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // effects below so stored data is read before anything could be rewritten.
   // setState-in-effect is intentional here: reading localStorage during render
   // would make server and first-client renders diverge (hydration mismatch).
+  // In cloud mode the fallback is EMPTY (never the demo seed): a business
+  // workspace with a cleared/empty tenant cache must show empty states, not
+  // another dataset.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    setAccounts(loadFromStorage("accounts", seedAccounts));
-    setTransactions(loadFromStorage("transactions", seedTransactions));
-    setCategories(loadFromStorage("categories", seedCategories));
-    setBudgets(loadFromStorage("budgets", seedBudgets));
-    setGoals(loadFromStorage("goals", seedGoals));
-    setPlannedTransactions(loadFromStorage("planned", seedPlanned));
-    setTodos(loadFromStorage("todos", initialTodos));
+    setAccounts(loadFromStorage("accounts", cloudEnabled ? [] : seedAccounts));
+    setTransactions(loadFromStorage("transactions", cloudEnabled ? [] : seedTransactions));
+    setCategories(loadFromStorage("categories", cloudEnabled ? [] : seedCategories));
+    setBudgets(loadFromStorage("budgets", cloudEnabled ? [] : seedBudgets));
+    setGoals(loadFromStorage("goals", cloudEnabled ? [] : seedGoals));
+    setPlannedTransactions(loadFromStorage("planned", cloudEnabled ? [] : seedPlanned));
+    setTodos(loadFromStorage("todos", cloudEnabled ? [] : initialTodos));
         setSelectedYear(loadFromStorage("year", DEFAULT_YEAR));
     setCurrency(loadFromStorage("currency", DEFAULT_CURRENCY));
     setActivities(loadFromStorage("activities", []));
@@ -431,6 +443,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setNotifications(loadFromStorage("notifications", []));
     setDashboardFilterValue(loadFromStorage("dashboardFilter", {}));
     setHydrated(true);
+    // cloudEnabled is a stable env-derived constant for the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -500,11 +514,14 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const incomeSplit = useMemo(() => calculateIncomeSplit(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
   const outflowTypes = useMemo(() => calculateOutflowTypes(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
   const cumulativeGrowth = useMemo(() => calculateCumulativeGrowth(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
-  const netWorthGrowth = useMemo(() => calculateNetWorthGrowth(displayAccounts), [displayAccounts]);
+  const netWorthGrowth = useMemo(
+    () => calculateNetWorthGrowth(displayAccounts, displayTransactions, selectedPeriod || seedPeriods[0]),
+    [displayAccounts, displayTransactions, selectedPeriod]
+  );
   const incomeStreamStack = useMemo(() => calculateIncomeStreamStack(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
   const topOutflows = useMemo(() => calculateTopOutflows(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
   const topSpendings = useMemo(() => calculateTopSpendings(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
-    const progress = useMemo(() => calculateProgress(displayGoals), [displayGoals]);
+  const progress = useMemo(() => calculateProgress(displayGoals), [displayGoals]);
   const savingsGoal = useMemo(() => calculateSavingsGoal(displayAccounts, displayGoals), [displayAccounts, displayGoals]);
 
   // ---- New Feature: derived data for Today, Day view, Search, Budget, Goals ----
@@ -780,12 +797,28 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     if (data.activities) setActivities(data.activities);
   };
 
-  /** Restore the app's starter (seed) dataset after a tenant-cache wipe.
-   *  Mirrors the hydration defaults exactly — used by the cloud bootstrap
-   *  when the local snapshot belongs to a different business, so a new
-   *  workspace initializes from the designed starter data instead of
-   *  inheriting another business's cached records. */
+  /** Restore the starter dataset after a tenant-cache wipe.
+   *  In cloud mode the starter is EMPTY: a business workspace must show
+   *  its own data only — never the single-user demo (seed) dataset, which
+   *  would otherwise appear identical across every business. The seed
+   *  dataset remains the starter for the unconfigured local-only demo. */
   const resetToStarterState = () => {
+    if (isSupabaseConfigured()) {
+      setAccounts([]);
+      setTransactions([]);
+      setCategories([]);
+      setBudgets([]);
+      setGoals([]);
+      setPlannedTransactions([]);
+      setTodos([]);
+      setActivities([]);
+      setNotifications([]);
+      setSelectedYear(DEFAULT_YEAR);
+      setCurrency(DEFAULT_CURRENCY);
+      setSelectedDay(todayISO());
+      setDashboardFilterValue({});
+      return;
+    }
     setAccounts(seedAccounts);
     setTransactions(seedTransactions);
     setCategories(seedCategories);
@@ -802,15 +835,20 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addAccount = (data: Omit<Account, "id" | "currentBalance">) => {
-    setAccounts((prev) => [
-      ...prev,
-      {
-        id: nextId("a", prev.map((a) => a.id)),
-        ...data,
-        currentBalance: data.openingBalance,
-        active: data.active ?? true,
-      },
-    ]);
+    let newId = "";
+    setAccounts((prev) => {
+      newId = nextId("a", prev.map((a) => a.id));
+      return [
+        ...prev,
+        {
+          id: newId,
+          ...data,
+          currentBalance: data.openingBalance,
+          active: data.active ?? true,
+        },
+      ];
+    });
+    return newId;
   };
 
   const updateAccount = (id: string, patch: Partial<NewEntity<Account>>) => {
@@ -822,10 +860,15 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addCategory = (data: NewEntity<Category>) => {
-    setCategories((prev) => [
-      ...prev,
-      { id: nextId("c", prev.map((c) => c.id)), ...data },
-    ]);
+    let newId = "";
+    setCategories((prev) => {
+      newId = nextId("c", prev.map((c) => c.id));
+      return [
+        ...prev,
+        { id: newId, ...data },
+      ];
+    });
+    return newId;
   };
 
   const updateCategory = (id: string, patch: Partial<NewEntity<Category>>) => {
@@ -1009,6 +1052,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // that the debounced push below uploads for the new tenant.
   useEffect(() => {
     if (!hydrated || !isSupabaseConfigured()) return;
+    // Auth / selector / admin surfaces never bootstrap tenant data: there
+    // is no Shell there and no business context to resolve. Sync state
+    // already starts "idle", so nothing needs to be set here.
+    const path = window.location.pathname;
+    if (path === "/login" || path === "/workspaces" || path.startsWith("/admin")) {
+      return;
+    }
     let cancelled = false;
     cloudBusy.current = true;
     // Deliberate synchronous status flip: "syncing" must be visible the
@@ -1022,21 +1072,93 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         const client = getSupabaseBrowserClient();
         const auth = await client?.auth.getUser();
         if (!auth?.data?.user) {
-          // Local-only session — behave exactly like the single-user app.
-          setCloudSyncState("idle");
+          // No session on a business surface. proxy.ts and the
+          // (workspace) server layout already gate these routes; this
+          // is defense in depth. An anonymous visitor is never rendered
+          // a "local-only" business dashboard.
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+          window.location.assign("/login");
           return;
         }
         const businesses = await fetchBusinessesForUser();
-        if (cancelled) return;
-        if (!businesses || businesses.length === 0) {
-          // Signed in but no membership visible (RLS deny / propagation).
-          setCloudSyncState("error");
-          return;
+
+        // ---- platform-admin "viewing" context ------------------------
+        // A viewing marker (written by enterBusinessAsAdmin) is honored
+        // ONLY after the database confirms the user is a platform admin
+        // (current_is_platform_admin RPC), and only while the target
+        // business still exists. The viewed business becomes the EXPLICIT
+        // active business with the honest "platform-admin" role — never
+        // inferred from arbitrary data, never silently owner-like.
+        const viewing = getAdminViewing();
+        let active: BusinessInfo | null = null;
+        if (viewing) {
+          const isAdmin = await checkPlatformAdmin();
+          if (cancelled) return;
+          if (isAdmin) {
+            const memberView = businesses?.find((b) => b.id === viewing.businessId);
+            if (memberView) {
+              // Admin who is also a member: surface the platform-admin
+              // context, not their business-membership role.
+              active = { ...memberView, role: "platform-admin" };
+            } else if (client) {
+              // Not a member: read the business header through the
+              // migration-007 businesses SELECT policy. Failure to
+              // resolve → stale marker (handled below).
+              const q = await client
+                .from("businesses")
+                .select("id, name, slug, currency")
+                .eq("id", viewing.businessId)
+                .maybeSingle();
+              if (cancelled) return;
+              const row = q.data as Record<string, unknown> | null;
+              if (row && row.id) {
+                active = {
+                  id: String(row.id),
+                  name:
+                    typeof row.name === "string" && row.name
+                      ? row.name
+                      : viewing.businessName || "Business",
+                  slug: typeof row.slug === "string" && row.slug ? row.slug : null,
+                  currency: typeof row.currency === "string" && row.currency ? row.currency : "USD",
+                  role: "platform-admin",
+                };
+              }
+            }
+            if (active) {
+              // Make the viewed business the explicit active business so
+              // every downstream read is tenant-scoped to it.
+              setActiveBusinessId(active.id);
+            }
+          }
+          if (!active) {
+            // Stale or illegitimate marker (not an admin / business gone /
+            // RLS denies the header read) → drop it and continue with the
+            // user's own normal context. Foreign data is never shown.
+            clearAdminViewing();
+          }
         }
-        const storedId = getActiveBusinessId();
-        const active = businesses.find((b) => b.id === storedId) ?? businesses[0];
+        if (cancelled) return;
+        if (!active) {
+          if (!businesses || businesses.length === 0) {
+            // Signed in but no membership visible (RLS deny / propagation).
+            setCloudSyncState("error");
+            return;
+          }
+          const storedId = getActiveBusinessId();
+          if (businesses.length > 1 && !businesses.some((b) => b.id === storedId)) {
+            // Multiple memberships and no explicit selection — or a stale
+            // selection (e.g. this user was removed from the remembered
+            // business). Never pick one for the user: the workspace
+            // selector decides. The selection stays device-local UI state;
+            // access to every record is still enforced per-request by RLS.
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+            window.location.assign("/workspaces");
+            return;
+          }
+          active = businesses.find((b) => b.id === storedId) ?? businesses[0];
+          if (active.id !== storedId) setActiveBusinessId(active.id);
+        }
         setActiveBusiness(active);
-        if (active.id !== storedId) setActiveBusinessId(active.id);
 
         const cloud = await pullBusinessState(active.id);
         if (cancelled) return;
@@ -1047,50 +1169,37 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
         // ---- deterministic local-snapshot resolution --------------
         // The local snapshot must never leak into another business's
-        // context. The owner tag records which business it belongs to.
+        // context, and the single-user demo (seed) dataset must never be
+        // adopted by a business. The active business's cloud state is the
+        // ONLY dataset a workspace may show; a business with no rows is
+        // genuinely empty (honest empty states) — not another workspace's
+        // or the demo's data.
         const ownerTag = getCloudOwnerTag();
-        const cloudHasData =
-          cloud.accounts.length > 0 ||
-          cloud.transactions.length > 0 ||
-          cloud.categories.length > 0 ||
-          cloud.budgets.length > 0 ||
-          cloud.goals.length > 0 ||
-          cloud.plannedTransactions.length > 0 ||
-          cloud.activities.length > 0;
-
         if (ownerTag !== active.id) {
-          if (cloudHasData) {
-            // New context exists in the cloud → cloud is authoritative.
-            // Wipe the foreign local snapshot first, then import.
-            clearTenantLocalData();
-            resetToStarterState();
-          } else if (ownerTag !== null) {
-            // Switching to a business with no cloud data → seed it from
-            // the standard starter dataset, never from another
-            // business's cached records.
-            clearTenantLocalData();
-            resetToStarterState();
-          }
-          // ownerTag === null && !cloudHasData → first cloud session:
-          // adopt the existing local snapshot as this business's
-          // starter dataset (the designed new-tenant flow).
+          // New context (or first cloud session): wipe any previous
+          // business's local snapshot and start EMPTY. Nothing is ever
+          // seeded into a business from the demo dataset, and a previous
+          // business's cached rows are never adopted here.
+          clearTenantLocalData();
+          resetToStarterState();
         }
-        // ownerTag === active.id → same-business reload: cloud is
-        // authoritative where present; local cache preserves offline
-        // work wherever the cloud has no rows yet.
+        // ownerTag === active.id → same-business reload: no wipe; the
+        // cloud pull below overwrites every collection, empty included.
 
+        // Apply the business's cloud state wholesale. Empty collections
+        // CLEAR the corresponding view rather than leaving prior or demo
+        // data visible — cloud is the single source of truth per business.
         replaceAllData({
-          accounts: cloud.accounts.length ? cloud.accounts : undefined,
-          transactions: cloud.transactions.length ? cloud.transactions : undefined,
-          categories: cloud.categories.length ? cloud.categories : undefined,
-          budgets: cloud.budgets.length ? cloud.budgets : undefined,
-          goals: cloud.goals.length ? cloud.goals : undefined,
-          plannedTransactions: cloud.plannedTransactions.length
-            ? cloud.plannedTransactions
-            : undefined,
-          activities: cloud.activities.length ? cloud.activities : undefined,
+          accounts: cloud.accounts,
+          transactions: cloud.transactions,
+          categories: cloud.categories,
+          budgets: cloud.budgets,
+          goals: cloud.goals,
+          plannedTransactions: cloud.plannedTransactions,
+          activities: cloud.activities,
         });
-        if (cloud.todos.length) setTodos(cloud.todos);
+        setTodos(cloud.todos);
+        setNotifications(cloud.notifications);
         if (cloud.selectedYear) setSelectedYear(cloud.selectedYear);
         if (cloud.currency && CURRENCIES.some((c) => c.code === cloud.currency)) {
           setCurrency(cloud.currency);
@@ -1113,6 +1222,10 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated || !activeBusiness || !isSupabaseConfigured()) return;
     if (cloudBusy.current) return; // don't echo the bootstrap pull back
+    // Platform admin inspecting a tenant: migration 007 grants READ-ONLY
+    // access (no admin write policies). Local state must never be pushed
+    // into a business the admin is merely viewing.
+    if (getAdminViewing()) return;
     if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(() => {
       void pushBusinessState(activeBusiness.id, {
