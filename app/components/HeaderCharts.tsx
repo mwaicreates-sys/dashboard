@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  Legend,
 } from "recharts";
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyCompact } from "@/lib/currency";
@@ -26,10 +27,10 @@ export function NetWorthGrowth() {
         aria-label="Net Worth Growth — view growth details"
         className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
       >
-        <h3 className="font-inter text-[12px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+        <h3 className="font-inter text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
           Net Worth Growth
         </h3>
-        <div className="mt-2 flex h-[70px] items-center justify-center rounded border border-dashed border-border bg-card/30 text-[13px] text-secondary-text">
+        <div className="mt-1.5 flex h-[50px] sm:h-[70px] items-center justify-center rounded border border-dashed border-border bg-card/30 text-[11px] sm:text-[13px] text-secondary-text">
           No net worth data yet
         </div>
       </Link>
@@ -42,10 +43,10 @@ export function NetWorthGrowth() {
       aria-label="Net Worth Growth — view growth details"
       className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
     >
-      <h3 className="font-inter text-[12px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+      <h3 className="font-inter text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
         Net Worth Growth
       </h3>
-      <ResponsiveContainer width="100%" height={70}>
+      <ResponsiveContainer width="100%" height={50}>
         <AreaChart data={netWorthGrowth}>
           <defs>
             <linearGradient id="netWorthGradient" x1="0" y1="0" x2="0" y2="1">
@@ -58,14 +59,14 @@ export function NetWorthGrowth() {
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
+            tick={{ fontSize: 7, fill: "var(--chart-axis)" }}
             interval="preserveStartEnd"
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
-            width={30}
+            tick={{ fontSize: 7, fill: "var(--chart-axis)" }}
+            width={25}
             tickFormatter={(v) => formatCurrencyCompact(Number(v))}
           />
           <Tooltip
@@ -108,24 +109,24 @@ export function IncomeStreamStack() {
       aria-label="Income Stream Stack — view income details"
       className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
     >
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+      <h3 className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
         Income Stream Stack
       </h3>
-      <ResponsiveContainer width="100%" height={70}>
+      <ResponsiveContainer width="100%" height={50}>
         <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
+            tick={{ fontSize: 6, fill: "var(--chart-axis)" }}
             interval="preserveStartEnd"
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 8, fill: "var(--chart-axis)" }}
-            width={20}
+            tick={{ fontSize: 6, fill: "var(--chart-axis)" }}
+            width={15}
           />
           <Tooltip
             formatter={(value) => formatCurrencyCompact(Number(value))}
@@ -137,10 +138,10 @@ export function IncomeStreamStack() {
               color: "var(--color-primary-text)",
             }}
           />
-          <Bar dataKey="salary" stackId="1" fill="#3B7A9E" barSize={5} />
-          <Bar dataKey="freelance" stackId="1" fill="#4A909B" barSize={5} />
-          <Bar dataKey="investments" stackId="1" fill="#5B8C5A" barSize={5} />
-          <Bar dataKey="other" stackId="1" fill="#F4B860" barSize={5} />
+          <Bar dataKey="salary" stackId="1" fill="#3B7A9E" barSize={4} />
+          <Bar dataKey="freelance" stackId="1" fill="#4A909B" barSize={4} />
+          <Bar dataKey="investments" stackId="1" fill="#5B8C5A" barSize={4} />
+          <Bar dataKey="other" stackId="1" fill="#F4B860" barSize={4} />
         </BarChart>
       </ResponsiveContainer>
     </Link>

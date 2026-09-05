@@ -9,7 +9,9 @@
 --     owner email + access code (e.g. LUM-4K7Q2M9XRT)
 --
 -- ...instead of password signup / email confirmation. The code is stored
--- ONLY as a sha256 hash (activation_code_hash) — never plaintext.
+-- in two places:
+--   1. activation_code_hash on business_owner_claims (SHA256 hash for verification)
+--   2. activation_code on businesses (plaintext for admin retrieval)
 --
 -- Semantics preserved:
 --   * bound to the exact business + owner email
@@ -27,8 +29,15 @@ alter table public.business_owner_claims
   add column if not exists consumed_by uuid,
   add column if not exists consumed_at timestamptz;
 
+-- Add activation_code column to businesses table for admin retrieval
+alter table public.businesses
+  add column if not exists activation_code text;
+
 create index if not exists business_owner_claims_activation_code_hash_idx
   on public.business_owner_claims (activation_code_hash);
+
+create index if not exists businesses_activation_code_idx
+  on public.businesses (activation_code);
 
 -- ------------------------------------------------------------
 -- Generate (or regenerate) the owner activation code for a business.
@@ -107,9 +116,11 @@ begin
 
   -- Keep the owner contact info on the business in sync (same rule as
   -- generate_owner_claim) so provisioning metadata is never stale.
+  -- ALSO store the activation code plaintext on the business for admin retrieval.
   update public.businesses
      set owner_name  = coalesce(owner_name, v_name),
-         owner_email = v_email
+         owner_email = v_email,
+         activation_code = v_code
    where id = p_business_id;
 
   return jsonb_build_object(

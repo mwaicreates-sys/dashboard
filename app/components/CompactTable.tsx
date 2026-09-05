@@ -15,17 +15,17 @@ export function CompactTable({
 }) {
   return (
     <div>
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">
+      <h3 className="mb-1.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text">
         {title}
       </h3>
       <div className="overflow-x-auto rounded border border-border">
-        <table className="w-full text-left text-[11px]">
+        <table className="w-full text-left text-[10px] sm:text-[11px]">
           <thead>
             <tr className="border-b border-border bg-card">
               {headers.map((h) => (
                 <th
                   key={h}
-                  className="px-1.5 py-1 font-medium text-muted-text"
+                  className="px-1.5 py-0.75 sm:px-1.5 sm:py-1 font-medium text-muted-text"
                 >
                   {h}
                 </th>
@@ -39,19 +39,19 @@ export function CompactTable({
                 className="border-b border-light-border last:border-b-0"
               >
                 {headers.map((h) => (
-                  <td key={h} className="px-1.5 py-1 text-primary-text">
+                  <td key={h} className="px-1.5 py-0.75 sm:px-1.5 sm:py-1 text-primary-text">
                     {showProgress && h === "Amount" ? (
                       <div className="flex items-center gap-1.5">
-                        <span className="w-7 text-right tabular-nums">
+                        <span className="w-6 text-right tabular-nums sm:w-7">
                           {row[h] as string}
                         </span>
-                        <div className="h-1 flex-1 rounded-full bg-border">
+                        <div className="h-0.75 sm:h-1 flex-1 rounded-full bg-border">
                           <div
-                            className="h-1 rounded-full bg-orange"
+                            className="h-0.75 sm:h-1 rounded-full bg-orange"
                             style={{ width: `${(row.percentage as number)}%` }}
                           />
                         </div>
-                        <span className="w-5 text-right tabular-nums text-muted-text">
+                        <span className="w-4 text-right tabular-nums text-muted-text sm:w-5">
                           {row.percentage as number}%
                         </span>
                       </div>

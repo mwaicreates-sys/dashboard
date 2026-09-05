@@ -25,6 +25,7 @@ export interface BusinessRow {
   created_at: string | null;
   owner_name?: string | null;
   owner_email?: string | null;
+  activation_code?: string | null;
 }
 
 export interface BusinessMeta extends BusinessRow {
@@ -32,6 +33,7 @@ export interface BusinessMeta extends BusinessRow {
   ownerEmail: string | null;
   ownerName: string | null;
   active: boolean;
+  accessCode: string | null;
 }
 
 export interface ActivityEvent {
@@ -156,6 +158,7 @@ export async function fetchAdminBusinesses(): Promise<BusinessMeta[] | null> {
         ownerEmail,
         ownerName,
         active: activeIds.has(row.id),
+        accessCode: row.activation_code ?? null,
       };
     });
   } catch {
@@ -255,6 +258,7 @@ export async function fetchAdminBusinessDetail(id: string): Promise<BusinessDeta
       ownerEmail,
       ownerName,
       active: activeIds.has(id),
+      accessCode: base.activation_code ?? null,
     };
 
     return {

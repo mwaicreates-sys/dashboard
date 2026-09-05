@@ -9,6 +9,7 @@ import { fetchAdminBusinessDetail, type BusinessDetailData } from "../../data";
 import { EmptyState, SkeletonBlock, StatusPill, formatDate } from "../../ui";
 import { enterBusinessAsAdmin } from "@/lib/platformAdmin";
 import { getActiveBusinessId } from "@/lib/cloudSync";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type TabId = "overview" | "activity" | "settings";
 const TABS: Array<{ id: TabId; label: string }> = [
@@ -23,6 +24,10 @@ export default function BusinessDetailPage() {
   const [data, setData] = useState<BusinessDetailData | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabId>("overview");
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [generatingCode, setGeneratingCode] = useState(false);
+  const [newCode, setNewCode] = useState<string | null>(null);
+  const [copyNewCode, setCopyNewCode] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -38,6 +43,58 @@ export default function BusinessDetailPage() {
   }, [id]);
 
   const business = data?.business ?? null;
+
+  const copyCode = async () => {
+    if (!business?.accessCode) return;
+    try {
+      await navigator.clipboard.writeText(business.accessCode);
+      setCopiedCode(true);
+      window.setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      // Clipboard API unavailable (e.g. non-HTTPS). The selectable code
+      // rendered below remains a usable fallback.
+    }
+  };
+
+  const handleCopyNewCode = async () => {
+    if (!newCode) return;
+    try {
+      await navigator.clipboard.writeText(newCode);
+      setCopyNewCode(true);
+      window.setTimeout(() => setCopyNewCode(false), 2000);
+    } catch {
+      // Clipboard API unavailable
+    }
+  };
+
+  const generateNewCode = async () => {
+    if (!business?.ownerEmail) return;
+    setGeneratingCode(true);
+    setNewCode(null);
+    
+    const client = getSupabaseBrowserClient();
+    if (!client) {
+      setGeneratingCode(false);
+      return;
+    }
+
+    try {
+      const { data: response, error: rpcError } = await client.rpc("generate_owner_activation_code", {
+        p_business_id: id,
+        p_email: business.ownerEmail,
+      });
+
+      if (rpcError) {
+        console.error("generate_owner_activation_code error:", rpcError);
+      } else if (typeof response === "object" && response !== null && "activation_code" in response) {
+        setNewCode(response.activation_code as string);
+      }
+    } catch (e) {
+      console.error("Error generating code:", e);
+    } finally {
+      setGeneratingCode(false);
+    }
+  };
 
   if (error) {
     return (
@@ -104,7 +161,18 @@ export default function BusinessDetailPage() {
         ))}
       </div>
 
-      {tab === "overview" ? <OverviewSection data={data} /> : null}
+      {tab === "overview" ? (
+        <OverviewSection 
+          data={data} 
+          onCopyCode={copyCode} 
+          copiedCode={copiedCode}
+          onGenerateCode={generateNewCode}
+          generatingCode={generatingCode}
+          newCode={newCode}
+          onCopyNewCode={handleCopyNewCode}
+          copiedNewCode={copyNewCode}
+        /> 
+      ) : null}
       {tab === "activity" ? <ActivitySection data={data} /> : null}
       {tab === "settings" ? <SettingsSection business={business} /> : null}
     </div>
@@ -123,7 +191,25 @@ function BackLink() {
   );
 }
 
-function OverviewSection({ data }: { data: BusinessDetailData }) {
+function OverviewSection({ 
+  data, 
+  onCopyCode, 
+  copiedCode,
+  onGenerateCode,
+  generatingCode,
+  newCode,
+  onCopyNewCode,
+  copiedNewCode,
+}: { 
+  data: BusinessDetailData; 
+  onCopyCode: () => void; 
+  copiedCode: boolean;
+  onGenerateCode: () => void;
+  generatingCode: boolean;
+  newCode: string | null;
+  onCopyNewCode: () => void;
+  copiedNewCode: boolean;
+}) {
   const b = data.business;
   if (!b) return null;
   return (
@@ -134,6 +220,60 @@ function OverviewSection({ data }: { data: BusinessDetailData }) {
         <DetailRow label="Slug" value={b.slug ?? "—"} />
         <DetailRow label="Created" value={formatDate(b.created_at)} />
       </dl>
+      {b.accessCode ? (
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-text mb-1">Access Code</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded-xl bg-surface px-3 py-2 text-[13px] font-semibold text-primary-text break-all">
+              {b.accessCode}
+            </code>
+            <button
+              type="button"
+              onClick={onCopyCode}
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-blue px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60"
+            >
+              {copiedCode ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="text-[11px] uppercase tracking-wider text-muted-text mb-2">Access Code</div>
+          <div className="text-[13px] text-muted-text mb-3">
+            No activation code generated. Generate one to send to the business owner.
+          </div>
+          {newCode ? (
+            <div className="space-y-3">
+              <div className="text-[11px] text-muted-text">New access code generated</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 rounded-xl bg-surface px-3 py-2 text-[13px] font-semibold text-primary-text break-all">
+                  {newCode}
+                </code>
+                <button
+                  type="button"
+                  onClick={onCopyNewCode}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-blue px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60"
+                >
+                  {copiedNewCode ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            b.ownerEmail ? (
+              <button
+                type="button"
+                onClick={onGenerateCode}
+                disabled={generatingCode}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
+              >
+                {generatingCode ? "Generating…" : "Generate Access Code"}
+              </button>
+            ) : (
+              <div className="text-[13px] text-muted-text">Business has no owner email assigned.</div>
+            )
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -141,8 +281,8 @@ function OverviewSection({ data }: { data: BusinessDetailData }) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border/60 pb-2.5 last:border-0">
-      <dt className="text-[11px] uppercase tracking-wider text-muted-text">{label}</dt>
-      <dd className="mt-0.5 text-[13px] font-medium text-primary-text">{value}</dd>
+      <span className="text-[11px] uppercase tracking-wider text-muted-text">{label}</span>
+      <span className="mt-0.5 text-[13px] font-medium text-primary-text">{value}</span>
     </div>
   );
 }

@@ -7,11 +7,11 @@ import { OutflowTypes } from "./OutflowTypes";
 import { CumulativeGrowth } from "./CumulativeGrowth";
 
 const cardLink =
-  "group block rounded border border-border bg-card p-2.5 cursor-pointer transition-colors hover:border-secondary-text/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue";
+  "group block rounded border border-border bg-card p-2 sm:p-2.5 cursor-pointer transition-colors hover:border-secondary-text/50 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue";
 
 export function VisualizationGrid() {
   return (
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5">
+    <div className="grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
       <Link
         href="/outflow"
         aria-label="Monthly Income vs Outflow — view outflow details"

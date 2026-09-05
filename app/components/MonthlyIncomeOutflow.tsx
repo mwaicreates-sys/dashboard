@@ -18,23 +18,23 @@ export function MonthlyIncomeOutflow() {
 
   return (
     <div className="h-full w-full">
-      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">
+      <h3 className="mb-1 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text">
         Monthly Income vs Outflow
       </h3>
-      <ResponsiveContainer width="100%" height={120}>
+      <ResponsiveContainer width="100%" height={90}>
         <BarChart data={monthlyIncomeOutflow} barGap={2}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 9, fill: "var(--chart-axis)" }}
+            tick={{ fontSize: 7, fill: "var(--chart-axis)" }}
           />
           <YAxis
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 9, fill: "var(--chart-axis)" }}
-            width={44}
+            tick={{ fontSize: 7, fill: "var(--chart-axis)" }}
+            width={35}
             tickFormatter={(v) => formatCurrencyCompact(Number(v))}
           />
           <Tooltip
@@ -49,7 +49,7 @@ export function MonthlyIncomeOutflow() {
             }}
           />
           <Legend
-            wrapperStyle={{ fontSize: "9px", paddingTop: "2px" }}
+            wrapperStyle={{ fontSize: "8px", paddingTop: "2px" }}
             formatter={(value) => (
               <span style={{ color: "var(--color-secondary-text)" }}>{value}</span>
             )}
@@ -59,14 +59,14 @@ export function MonthlyIncomeOutflow() {
             name="Income"
             fill="#3B7A9E"
             radius={[2, 2, 0, 0]}
-            barSize={6}
+            barSize={5}
           />
           <Bar
             dataKey="outflow"
             name="Outflow"
             fill="#E87A5D"
             radius={[2, 2, 0, 0]}
-            barSize={6}
+            barSize={5}
           />
         </BarChart>
       </ResponsiveContainer>

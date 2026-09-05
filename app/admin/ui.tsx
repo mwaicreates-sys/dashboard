@@ -11,8 +11,8 @@ import type { ReactNode } from "react";
 export function AdminPageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="mb-3">
-      <h1 className="font-inter text-2xl font-bold tracking-tight text-primary-text md:text-3xl">{title}</h1>
-      <p className="mt-0.5 text-xs text-secondary-text">{subtitle}</p>
+      <h1 className="font-inter text-[20px] font-bold tracking-tight text-primary-text sm:text-[22px] md:text-[24px] lg:text-[28px]">{title}</h1>
+      <p className="mt-0.5 text-[10px] sm:text-[11px] text-secondary-text">{subtitle}</p>
     </div>
   );
 }
@@ -30,9 +30,9 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface px-6 py-12 text-center">
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-surface px-4 py-8 sm:px-6 sm:py-10 text-center">
       {icon ? <div className="mb-3 text-muted-text">{icon}</div> : null}
-      <p className="font-inter text-base font-semibold text-primary-text">{title}</p>
+      <p className="font-inter text-base sm:text-lg font-semibold text-primary-text">{title}</p>
       {message ? <p className="mt-1 max-w-sm text-[11px] leading-relaxed text-muted-text">{message}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}
     </div>
@@ -60,10 +60,10 @@ export function StatusPill({
       : "bg-muted-text/15 text-secondary-text";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide ${cls}`}
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${
+        className={`h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full ${
           tone === "green" ? "bg-green" : tone === "blue" ? "bg-blue" : "bg-muted-text/70"
         }`}
       />
@@ -88,14 +88,14 @@ export function KpiCard({
   iconColor?: string;
 }) {
   return (
-    <div className="relative rounded-2xl border border-border bg-surface p-5">
-      <p className="font-inter text-[14px] font-medium text-secondary-text">{label}</p>
-      <p className="mt-2 font-inter text-[30px] font-bold leading-none tabular-nums text-primary-text">
+    <div className="relative rounded-2xl border border-border bg-surface p-3.5 sm:p-4">
+      <p className="font-inter text-[12px] sm:text-[14px] font-medium text-secondary-text">{label}</p>
+      <p className="mt-1.5 font-inter text-[24px] sm:text-[28px] font-bold leading-none tabular-nums text-primary-text">
         {value}
       </p>
-      {sub ? <p className="mt-2 text-[13px] text-muted-text">{sub}</p> : null}
+      {sub ? <p className="mt-1.5 text-[11px] sm:text-[12px] text-muted-text">{sub}</p> : null}
       <span
-        className={`absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}
+        className={`absolute right-2.5 sm:right-3 top-2.5 sm:top-3 flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}
       >
         {icon}
       </span>
@@ -113,9 +113,9 @@ export function SectionCard({
   actions?: ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border bg-surface p-4 md:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-inter text-[13px] font-semibold uppercase tracking-[0.12em] text-secondary-text">
+    <section className="rounded-2xl border border-border bg-surface p-3 sm:p-4 md:p-5">
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <h2 className="font-inter text-[11px] sm:text-[12px] font-semibold uppercase tracking-[0.12em] text-secondary-text">
           {title}
         </h2>
         {actions}
@@ -131,7 +131,7 @@ export function SectionCard({
  */
 export function MigrationNotice({ detail }: { detail?: string }) {
   return (
-    <div className="rounded-2xl border border-orange/40 bg-orange/[0.06] p-4">
+    <div className="rounded-2xl border border-orange/40 bg-orange/[0.06] p-3.5 sm:p-4">
       <p className="text-xs font-semibold text-orange">Platform-admin access not detected</p>
       <p className="mt-1 text-[11px] leading-relaxed text-muted-text">
         Some platform data is not visible. Apply{" "}
@@ -170,7 +170,6 @@ export function timeAgo(iso: string | null | undefined): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d} day${d === 1 ? "" : "s"} ago`;
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -179,5 +178,5 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }

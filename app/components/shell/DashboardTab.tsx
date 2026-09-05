@@ -23,14 +23,14 @@ export function DashboardTab() {
   return (
     <div className="space-y-3">
       {/* Primary KPIs */}
-      <section className="grid grid-cols-1 gap-3 xl:grid-cols-[320px_1fr]">
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
+      <section className="grid grid-cols-1 gap-3 sm:gap-3.5 md:grid-cols-[320px_1fr] lg:grid-cols-[360px_1fr]">
+        <div className="rounded-2xl border border-border bg-surface p-3.5 sm:p-4">
+          <p className="mb-2.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
             Key metrics
           </p>
           <KPIGaugeGroup />
         </div>
-        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-surface p-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-surface p-3.5 sm:p-4 md:grid-cols-2">
           <NetWorthGrowth />
           <IncomeStreamStack />
         </div>
@@ -46,9 +46,9 @@ export function DashboardTab() {
       <InformationGrid />
 
       {/* ── Secondary utilities ─────────────────────────────────── */}
-      <div className="flex items-center gap-3 pt-2" aria-hidden="true">
+      <div className="flex items-center gap-2.5 pt-1.5" aria-hidden="true">
         <span className="h-px flex-1 bg-border" />
-        <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-text">
+        <span className="text-[8px] sm:text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-text">
           More
         </span>
         <span className="h-px flex-1 bg-border" />

@@ -60,16 +60,16 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Greeting header */}
       <header>
-        <p className="font-inter text-[12px] font-semibold uppercase tracking-[0.16em] text-secondary-text">
+        <p className="font-inter text-[10px] font-semibold uppercase tracking-[0.14em] text-secondary-text sm:text-[11px]">
           Platform Admin
         </p>
-        <h1 className="mt-2 font-inter text-[28px] font-bold tracking-tight text-primary-text md:text-[34px]">
+        <h1 className="mt-1.5 font-inter text-[22px] font-bold tracking-tight text-primary-text sm:text-[26px] md:text-[28px] lg:text-[32px]">
           {greeting ? `${greeting}${name ? `, ${name}` : ""}` : "Platform overview"}
         </h1>
-        <p className="mt-2 text-[15px] font-medium text-secondary-text">
+        <p className="mt-1 text-[12px] sm:text-[13px] font-medium text-secondary-text">
           A snapshot of every workspace on the platform.
         </p>
       </header>
@@ -78,26 +78,26 @@ export default function AdminDashboard() {
 
       {!data && !error ? (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <SkeletonBlock className="h-28" />
-            <SkeletonBlock className="h-28" />
-            <SkeletonBlock className="h-28" />
-            <SkeletonBlock className="h-28" />
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <SkeletonBlock className="h-20 sm:h-24" />
+            <SkeletonBlock className="h-20 sm:h-24" />
+            <SkeletonBlock className="h-20 sm:h-24" />
+            <SkeletonBlock className="h-20 sm:h-24" />
           </div>
-          <SkeletonBlock className="h-52" />
-          <SkeletonBlock className="h-52" />
+          <SkeletonBlock className="h-40 sm:h-44" />
+          <SkeletonBlock className="h-40 sm:h-44" />
         </>
       ) : null}
 
       {data ? (
         <>
           {/* KPI metrics grid */}
-          <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <KpiCard
               label="Total Businesses"
               value={String(data.businessCount)}
               sub="On the platform"
-              icon={<BuildingIcon className="h-4 w-4" />}
+              icon={<BuildingIcon className="h-3 w-3 sm:h-4 w-4" />}
               iconBg={BLUE}
               iconColor={BLUE_TEXT}
             />
@@ -105,7 +105,7 @@ export default function AdminDashboard() {
               label="Active Businesses"
               value={String(data.activeBusinessCount)}
               sub="Activity in the last 30 days"
-              icon={<UserPlusIcon className="h-4 w-4" />}
+              icon={<UserPlusIcon className="h-3 w-3 sm:h-4 w-4" />}
               iconBg={TEAL}
               iconColor={TEAL_TEXT}
             />
@@ -113,7 +113,7 @@ export default function AdminDashboard() {
               label="Total Users"
               value={String(data.userCount)}
               sub="Registered accounts"
-              icon={<UserIcon className="h-4 w-4" />}
+              icon={<UserIcon className="h-3 w-3 sm:h-4 w-4" />}
               iconBg={GREEN}
               iconColor={GREEN_TEXT}
             />
@@ -122,7 +122,7 @@ export default function AdminDashboard() {
               value={String(data.recentEventCount)}
               sub="Events in the last 7 days"
               icon={
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 sm:h-4 w-4">
                   <circle cx="12" cy="12" r="9" />
                   <path d="M7.5 12.6l3 3 6-6.5" />
                 </svg>
@@ -133,14 +133,14 @@ export default function AdminDashboard() {
           </section>
 
           {/* Businesses + Recent Activity — two-column grid */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
             {/* Businesses section */}
             <SectionCard
               title="Businesses"
               actions={
                 <Link
                   href="/admin/businesses"
-                  className="text-[13px] font-medium text-blue transition-colors duration-150 hover:text-blue/80"
+                  className="text-[11px] sm:text-[12px] font-medium text-blue transition-colors duration-150 hover:text-blue/80"
                 >
                   View all →
                 </Link>
@@ -152,22 +152,22 @@ export default function AdminDashboard() {
                 <ul className="divide-y divide-border/60">
                   {data.recentBusinesses.map((b) => (
                     <li key={b.id}>
-                      <Link href={`/admin/businesses/${b.id}`} className="group flex items-center gap-3 py-3">
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue/10 text-blue">
-                          <BuildingIcon className="h-[18px] w-[18px]" />
+                      <Link href={`/admin/businesses/${b.id}`} className="group flex items-center gap-2.5 py-2 sm:py-2.5">
+                        <span className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl bg-blue/10 text-blue">
+                          <BuildingIcon className="h-4 w-4 sm:h-[18px] w-[18px]" />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate font-inter text-[15px] font-semibold text-primary-text">
+                          <span className="block truncate font-inter text-[13px] sm:text-[14px] font-semibold text-primary-text">
                             {b.name}
                           </span>
-                          <span className="block truncate text-[13px] text-secondary-text">
+                          <span className="block truncate text-[11px] sm:text-[12px] text-secondary-text">
                             {b.ownerEmail ?? "No owner"}
                           </span>
                         </span>
-                        <span className="hidden text-[13px] text-muted-text sm:block">
+                        <span className="hidden text-[11px] sm:text-[12px] text-muted-text sm:block">
                           {formatDate(b.created_at)}
                         </span>
-                        <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted-text transition-transform duration-150 group-hover:translate-x-0.5" />
+                        <ChevronRightIcon className="h-3 w-3 sm:h-4 w-4 shrink-0 text-muted-text transition-transform duration-150 group-hover:translate-x-0.5" />
                       </Link>
                     </li>
                   ))}
