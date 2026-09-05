@@ -79,10 +79,7 @@ export function NotificationPopover({ events }: { events: ActivityEvent[] }) {
       {open && (
         <div 
           className="dropdown-enter absolute right-0 top-full z-50 mt-2 w-full max-w-xs sm:w-80 origin-top-right rounded-2xl border border-border bg-surface shadow-lg"
-          style={{ 
-            maxWidth: '320px',
-            insetInlinePadding: 'max(0.75rem, env(safe-area-inset-left), env(safe-area-inset-right))'
-          }}
+          style={{ padding: 'env(safe-area-inset-left) 0.75rem env(safe-area-inset-bottom) env(safe-area-inset-right)' }}
         >
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
             <h2 className="font-inter text-sm font-semibold text-primary-text">Notifications</h2>

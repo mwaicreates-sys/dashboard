@@ -74,13 +74,14 @@ export default function BusinessDetailPage() {
         console.error("generate_owner_activation_code error:", rpcError);
       } else if (typeof response === "object" && response !== null && "activation_code" in response) {
         // Update the business data with the new access code
-        if (data) {
+        if (data && data.business) {
           setData({
-            ...data,
             business: {
               ...data.business,
               accessCode: response.activation_code as string,
             },
+            members: data.members,
+            activities: data.activities,
           });
         }
       }
