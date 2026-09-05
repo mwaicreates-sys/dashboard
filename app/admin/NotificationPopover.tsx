@@ -77,7 +77,13 @@ export function NotificationPopover({ events }: { events: ActivityEvent[] }) {
       </button>
 
       {open && (
-        <div className="dropdown-enter absolute right-0 top-full z-50 mt-2 w-80 origin-top-right rounded-2xl border border-border bg-surface shadow-lg">
+        <div 
+          className="dropdown-enter absolute right-0 top-full z-50 mt-2 w-full max-w-xs sm:w-80 origin-top-right rounded-2xl border border-border bg-surface shadow-lg"
+          style={{ 
+            maxWidth: '320px',
+            insetInlinePadding: 'max(0.75rem, env(safe-area-inset-left), env(safe-area-inset-right))'
+          }}
+        >
           <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
             <h2 className="font-inter text-sm font-semibold text-primary-text">Notifications</h2>
             <button
@@ -117,7 +123,7 @@ export function NotificationPopover({ events }: { events: ActivityEvent[] }) {
             ) : (
               <ul className="divide-y divide-border/60">
                 {events.slice(0, 20).map((e) => (
-                  <li key={e.id} className="flex items-start gap-3 px-4 py-3">
+                  <li key={e.id} className="flex items-start gap-3 px-4 py-2.5">
                     <span
                       className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
                         e.kind === "business"
@@ -128,14 +134,14 @@ export function NotificationPopover({ events }: { events: ActivityEvent[] }) {
                       <BuildingIcon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block font-inter text-[14px] font-medium text-primary-text">
+                      <span className="block font-inter text-[13px] sm:text-[14px] font-medium text-primary-text">
                         {e.title}
                       </span>
-                      <span className="block truncate text-[13px] text-muted-text">
+                      <span className="block text-sm sm:text-[13px] text-muted-text break-words">
                         {e.subject}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[13px] text-muted-text">
+                    <span className="shrink-0 text-[13px] text-muted-text whitespace-nowrap">
                       {timeAgo(e.at)}
                     </span>
                   </li>

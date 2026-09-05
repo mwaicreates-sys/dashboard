@@ -26,8 +26,6 @@ export default function BusinessDetailPage() {
   const [tab, setTab] = useState<TabId>("overview");
   const [copiedCode, setCopiedCode] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
-  const [newCode, setNewCode] = useState<string | null>(null);
-  const [copyNewCode, setCopyNewCode] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -56,21 +54,9 @@ export default function BusinessDetailPage() {
     }
   };
 
-  const handleCopyNewCode = async () => {
-    if (!newCode) return;
-    try {
-      await navigator.clipboard.writeText(newCode);
-      setCopyNewCode(true);
-      window.setTimeout(() => setCopyNewCode(false), 2000);
-    } catch {
-      // Clipboard API unavailable
-    }
-  };
-
   const generateNewCode = async () => {
     if (!business?.ownerEmail) return;
     setGeneratingCode(true);
-    setNewCode(null);
     
     const client = getSupabaseBrowserClient();
     if (!client) {
@@ -87,7 +73,16 @@ export default function BusinessDetailPage() {
       if (rpcError) {
         console.error("generate_owner_activation_code error:", rpcError);
       } else if (typeof response === "object" && response !== null && "activation_code" in response) {
-        setNewCode(response.activation_code as string);
+        // Update the business data with the new access code
+        if (data) {
+          setData({
+            ...data,
+            business: {
+              ...data.business,
+              accessCode: response.activation_code as string,
+            },
+          });
+        }
       }
     } catch (e) {
       console.error("Error generating code:", e);
@@ -168,9 +163,6 @@ export default function BusinessDetailPage() {
           copiedCode={copiedCode}
           onGenerateCode={generateNewCode}
           generatingCode={generatingCode}
-          newCode={newCode}
-          onCopyNewCode={handleCopyNewCode}
-          copiedNewCode={copyNewCode}
         /> 
       ) : null}
       {tab === "activity" ? <ActivitySection data={data} /> : null}
@@ -197,18 +189,12 @@ function OverviewSection({
   copiedCode,
   onGenerateCode,
   generatingCode,
-  newCode,
-  onCopyNewCode,
-  copiedNewCode,
 }: { 
   data: BusinessDetailData; 
   onCopyCode: () => void; 
   copiedCode: boolean;
   onGenerateCode: () => void;
   generatingCode: boolean;
-  newCode: string | null;
-  onCopyNewCode: () => void;
-  copiedNewCode: boolean;
 }) {
   const b = data.business;
   if (!b) return null;
@@ -220,9 +206,9 @@ function OverviewSection({
         <DetailRow label="Slug" value={b.slug ?? "—"} />
         <DetailRow label="Created" value={formatDate(b.created_at)} />
       </dl>
-      {b.accessCode ? (
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-text mb-1">Access Code</div>
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="text-[11px] uppercase tracking-wider text-muted-text mb-1">Access Code</div>
+        {b.accessCode ? (
           <div className="flex items-center gap-2">
             <code className="flex-1 rounded-xl bg-surface px-3 py-2 text-[13px] font-semibold text-primary-text break-all">
               {b.accessCode}
@@ -235,45 +221,21 @@ function OverviewSection({
               {copiedCode ? "Copied" : "Copy"}
             </button>
           </div>
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-text mb-2">Access Code</div>
-          <div className="text-[13px] text-muted-text mb-3">
-            No activation code generated. Generate one to send to the business owner.
-          </div>
-          {newCode ? (
-            <div className="space-y-3">
-              <div className="text-[11px] text-muted-text">New access code generated</div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 rounded-xl bg-surface px-3 py-2 text-[13px] font-semibold text-primary-text break-all">
-                  {newCode}
-                </code>
-                <button
-                  type="button"
-                  onClick={onCopyNewCode}
-                  className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-blue px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60"
-                >
-                  {copiedNewCode ? "Copied" : "Copy"}
-                </button>
-              </div>
-            </div>
+        ) : (
+          b.ownerEmail ? (
+            <button
+              type="button"
+              onClick={onGenerateCode}
+              disabled={generatingCode}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
+            >
+              {generatingCode ? "Generating…" : "Generate Access Code"}
+            </button>
           ) : (
-            b.ownerEmail ? (
-              <button
-                type="button"
-                onClick={onGenerateCode}
-                disabled={generatingCode}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
-              >
-                {generatingCode ? "Generating…" : "Generate Access Code"}
-              </button>
-            ) : (
-              <div className="text-[13px] text-muted-text">Business has no owner email assigned.</div>
-            )
-          )}
-        </div>
-      )}
+            <div className="text-[13px] text-muted-text">No owner email assigned. Cannot generate access code.</div>
+          )
+        )}
+      </div>
     </section>
   );
 }
