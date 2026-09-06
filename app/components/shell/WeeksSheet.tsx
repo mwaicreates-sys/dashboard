@@ -23,7 +23,7 @@ export function WeeksSheet({ onClose }: { onClose: () => void }) {
   return (
     <div
       ref={scrollContainerRef}
-      className="fixed inset-0 z-[70] h-dvh min-h-0 overflow-y-auto overscroll-y-contain bg-surface/95 backdrop-blur-md touch-pan-y"
+      className="fixed inset-0 z-[70] h-[100svh] min-h-0 w-full overflow-y-scroll overscroll-y-contain bg-surface/95 backdrop-blur-md touch-pan-y [-webkit-overflow-scrolling:touch] md:h-dvh md:overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-label="Weekly breakdown"
