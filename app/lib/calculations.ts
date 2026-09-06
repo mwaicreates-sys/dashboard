@@ -57,6 +57,21 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
 }
 
+const DASHBOARD_CATEGORY_PALETTE = [
+  "#3B7A9E",
+  "#5A9F90",
+  "#E87A5D",
+  "#F4B860",
+  "#7A9C57",
+  "#D96B82",
+  "#A67FD0",
+  "#5BA9D1",
+  "#D28A48",
+  "#7CA8A2",
+  "#C65D6A",
+  "#6B8AC9",
+];
+
 function categoryColors(categories: Category[]): Map<string, string> {
   const assignments = new Map<string, string>();
   const used = new Set<string>();
@@ -65,19 +80,13 @@ function categoryColors(categories: Category[]): Map<string, string> {
     const nameSeed = cat.name || cat.id || `category-${index}`;
     const preferred = cat.color && cat.color.trim().length > 0 ? cat.color : "";
 
-    let color = preferred;
-    if (!color || used.has(color)) {
-      const hue = (hashString(nameSeed) + index * 47) % 360;
-      const sat = 68;
-      const light = 48 + (index % 4) * 5;
-      color = hslToHex(hue, sat, light);
-    }
-
+    let color = preferred && !used.has(preferred) ? preferred : DASHBOARD_CATEGORY_PALETTE[index % DASHBOARD_CATEGORY_PALETTE.length];
     let fallbackIndex = 0;
+
     while (used.has(color)) {
       const hue = (hashString(`${nameSeed}-${fallbackIndex + 1}`) + index * 47) % 360;
-      const sat = 64 + (fallbackIndex % 3) * 6;
-      const light = 42 + ((index + fallbackIndex) % 5) * 6;
+      const sat = 66 + (fallbackIndex % 3) * 6;
+      const light = 42 + ((index + fallbackIndex) % 5) * 5;
       color = hslToHex(hue, sat, light);
       fallbackIndex += 1;
     }
@@ -254,17 +263,44 @@ export function calculateIncomeStreamStack(
   transactions: Transaction[],
   categories: Category[],
   period: PeriodConfig
-): Record<string, { salary: number; freelance: number; investments: number; other: number }> {
-  const result: Record<string, { salary: number; freelance: number; investments: number; other: number }> = {};
+): Record<string, Record<string, number>> {
+  const incomeCategories = categories.filter((category) => category.type === "income");
+  const chartKeyForCategory = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "other";
+
+  const result: Record<string, Record<string, number>> = {};
+
   for (const month of period.months) {
+    const monthRecord: Record<string, number> = {};
     const monthTx = transactions.filter((t) => t.date.startsWith(month) && t.type === "income");
-    result[month] = {
-      salary: monthTx.filter((t) => t.categoryId === "c1").reduce((s, t) => s + t.amount, 0),
-      freelance: monthTx.filter((t) => t.categoryId === "c2").reduce((s, t) => s + t.amount, 0),
-      investments: monthTx.filter((t) => t.categoryId === "c3").reduce((s, t) => s + t.amount, 0),
-      other: monthTx.filter((t) => t.categoryId === "c4").reduce((s, t) => s + t.amount, 0),
-    };
+
+    for (const category of incomeCategories) {
+      const key = chartKeyForCategory(category.name);
+      monthRecord[key] = monthTx
+        .filter((t) => t.categoryId === category.id)
+        .reduce((sum, t) => sum + t.amount, 0);
+    }
+
+    if (incomeCategories.length === 0) {
+      result[month] = {};
+      continue;
+    }
+
+    for (const tx of monthTx) {
+      const category = incomeCategories.find((cat) => cat.id === tx.categoryId);
+      if (!category) {
+        const key = "other";
+        monthRecord[key] = (monthRecord[key] ?? 0) + tx.amount;
+      }
+    }
+
+    result[month] = monthRecord;
   }
+
   return result;
 }
 

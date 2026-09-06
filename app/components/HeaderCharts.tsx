@@ -15,10 +15,17 @@ import {
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyCompact } from "@/lib/currency";
 
+function normalizeSeriesKey(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "other";
+}
+
 export function NetWorthGrowth() {
   const { netWorthGrowth } = useDashboardData();
 
-  // Empty business: show an honest empty state instead of a fabricated curve.
   if (!netWorthGrowth || netWorthGrowth.length === 0) {
     return (
       <Link
@@ -78,13 +85,7 @@ export function NetWorthGrowth() {
               color: "var(--color-primary-text)",
             }}
           />
-          <Area
-            type="monotone"
-            dataKey="value"
-            stroke="#3B7A9E"
-            strokeWidth={1.5}
-            fill="url(#netWorthGradient)"
-          />
+          <Area type="monotone" dataKey="value" stroke="#3B7A9E" strokeWidth={1.5} fill="url(#netWorthGradient)" />
         </AreaChart>
       </ResponsiveContainer>
     </Link>
@@ -92,18 +93,33 @@ export function NetWorthGrowth() {
 }
 
 export function IncomeStreamStack() {
-  const { incomeStreamStack, selectedPeriod } = useDashboardData();
+  const { incomeStreamStack, selectedPeriod, categories } = useDashboardData();
+
+  const categorySeries = categories
+    .filter((category) => category.type === "income")
+    .map((category) => ({
+      key: normalizeSeriesKey(category.name),
+      label: category.name,
+      color: category.color || "#3B7A9E",
+    }));
 
   const chartData = selectedPeriod
     ? selectedPeriod.months.map((month) => {
-        const d = incomeStreamStack[month] || { salary: 0, freelance: 0, investments: 0, other: 0 };
-        const label = new Date(month + "-01").toLocaleString("en-US", { month: "short" });
-        return { month: label, ...d };
+        const monthData = incomeStreamStack[month] || {};
+        const row: Record<string, number | string> = {
+          month: new Date(`${month}-01`).toLocaleString("en-US", { month: "short" }),
+        };
+
+        for (const item of categorySeries) {
+          row[item.key] = Number(monthData[item.key] ?? 0);
+        }
+
+        return row;
       })
     : [];
 
   const hasMeaningfulIncomeData = chartData.some((entry) =>
-    Object.values(entry).some((value) => Number(value) > 0)
+    categorySeries.some((item) => Number(entry[item.key] ?? 0) > 0)
   );
 
   if (!selectedPeriod || !hasMeaningfulIncomeData) {
@@ -147,6 +163,8 @@ export function IncomeStreamStack() {
             tickLine={false}
             tick={{ fontSize: 6, fill: "var(--chart-axis)" }}
             width={15}
+            domain={[0, "auto"]}
+            tickFormatter={(v) => formatCurrencyCompact(Number(v))}
           />
           <Tooltip
             formatter={(value) => formatCurrencyCompact(Number(value))}
@@ -158,10 +176,9 @@ export function IncomeStreamStack() {
               color: "var(--color-primary-text)",
             }}
           />
-          <Bar dataKey="salary" stackId="1" fill="#3B7A9E" barSize={4} />
-          <Bar dataKey="freelance" stackId="1" fill="#4A909B" barSize={4} />
-          <Bar dataKey="investments" stackId="1" fill="#5B8C5A" barSize={4} />
-          <Bar dataKey="other" stackId="1" fill="#F4B860" barSize={4} />
+          {categorySeries.map((item) => (
+            <Bar key={item.key} dataKey={item.key} name={item.label} stackId="income" fill={item.color} barSize={4} radius={[2, 2, 0, 0]} />
+          ))}
         </BarChart>
       </ResponsiveContainer>
     </Link>

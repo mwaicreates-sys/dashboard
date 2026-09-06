@@ -101,7 +101,7 @@ interface DashboardContextValue extends DashboardState {
   outflowTypes: DonutRow[];
   cumulativeGrowth: HeaderChartRow[];
   netWorthGrowth: HeaderChartRow[];
-  incomeStreamStack: Record<string, { salary: number; freelance: number; investments: number; other: number }>;
+  incomeStreamStack: Record<string, Record<string, number>>;
   topOutflows: OutflowRow[];
   topSpendings: SpendingRow[];
   progress: ProgressRow[];
