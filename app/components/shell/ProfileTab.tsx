@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme, ThemePreference } from "@/components/theme/ThemeProvider";
 import { useDashboardData } from "@/lib/dashboardData";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
@@ -18,6 +18,7 @@ interface UserProfile {
 }
 
 const DEFAULT_PROFILE: UserProfile = { name: "", email: "" };
+const profileCache = new Map<string, UserProfile>();
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string; icon: typeof SunIcon }> = [
   { id: "light", label: "Light", icon: SunIcon },
@@ -34,34 +35,50 @@ export function ProfileTab() {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [greeting, setGreeting] = useState("");
+  const profileRequest = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const requestId = ++profileRequest.current;
+    const isCurrentRequest = () => !cancelled && requestId === profileRequest.current;
     (async () => {
       const client = getSupabaseBrowserClient();
       if (!client) {
         setProfile(loadFromStorage(PROFILE_KEY, DEFAULT_PROFILE));
+        setProfileLoading(false);
         return;
       }
-      if (cancelled) return;
+      if (!isCurrentRequest()) return;
       const { data: auth } = await client.auth.getUser();
       const uid = auth?.user?.id;
       const email = auth?.user?.email ?? "";
-      if (cancelled) return;
+      if (!isCurrentRequest()) return;
       if (uid) {
+        const cachedProfile = profileCache.get(uid);
+        if (cachedProfile) {
+          setProfile(cachedProfile);
+          setProfileLoading(false);
+          return;
+        }
         const prof = await client.from("profiles").select("email,full_name").eq("id", uid).maybeSingle();
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         if (prof.error) {
           setProfileError("Could not load your profile.");
+          setProfileLoading(false);
           return;
         }
         const name = typeof prof.data?.full_name === "string" ? prof.data.full_name : "";
         const profileEmail = typeof prof.data?.email === "string" ? prof.data.email : email;
-        setProfile({ name, email: profileEmail });
+        const loadedProfile = { name, email: profileEmail };
+        profileCache.set(uid, loadedProfile);
+        setProfile(loadedProfile);
+        setProfileLoading(false);
       } else {
         setProfileError("Your session could not be verified.");
+        setProfileLoading(false);
       }
     })();
     return () => {
@@ -117,6 +134,7 @@ export function ProfileTab() {
     }
 
     setProfile({ name: profile.name.trim(), email: nextEmail });
+    profileCache.set(uid, { name: profile.name.trim(), email: nextEmail });
     setProfileSaved(true);
     setSavingProfile(false);
   };
@@ -176,12 +194,21 @@ export function ProfileTab() {
                 {initials}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-primary-text">
-                  {profile.name.trim() || "Your name"}
-                </p>
-                <p className="truncate text-[11px] text-muted-text">
-                  {profile.email.trim() || "you@example.com"}
-                </p>
+                {profileLoading ? (
+                  <>
+                    <div className="h-4 w-32 animate-pulse rounded bg-card" />
+                    <div className="mt-1.5 h-3 w-40 animate-pulse rounded bg-card" />
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-primary-text">
+                      {profile.name || "Your name"}
+                    </p>
+                    <p className="truncate text-[11px] text-muted-text">
+                      {profile.email || "you@example.com"}
+                    </p>
+                  </>
+                )}
               </div>
               <span className="rounded-full bg-card px-2.5 py-1 text-[10px] font-medium text-secondary-text">
                 {resolvedTheme === "dark" ? "Dark mode" : "Light mode"}
@@ -189,35 +216,43 @@ export function ProfileTab() {
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="block">
+              <div className="block">
                 <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
                   Name
                 </span>
-                <input
-                  value={profile.name}
-                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                  placeholder="Your name"
-                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
-                />
-              </label>
-              <label className="block">
+                {profileLoading ? (
+                  <div className="h-10 w-full animate-pulse rounded-xl border border-border bg-card" />
+                ) : (
+                  <input
+                    value={profile.name}
+                    onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                    placeholder="Your name"
+                    className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
+                  />
+                )}
+              </div>
+              <div className="block">
                 <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
                   Email
                 </span>
-                <input
-                  type="email"
-                  value={profile.email}
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  placeholder="you@example.com"
-                  className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
-                />
-              </label>
+                {profileLoading ? (
+                  <div className="h-10 w-full animate-pulse rounded-xl border border-border bg-card" />
+                ) : (
+                  <input
+                    type="email"
+                    value={profile.email}
+                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                    placeholder="you@example.com"
+                    className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
+                  />
+                )}
+              </div>
             </div>
             <div className="mt-3 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => void saveProfile()}
-                disabled={savingProfile}
+                disabled={savingProfile || profileLoading}
                 className="inline-flex h-9 items-center rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
               >
                 {savingProfile ? "Saving…" : "Save"}
