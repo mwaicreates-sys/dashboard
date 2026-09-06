@@ -32,9 +32,9 @@ export function Shell() {
   };
 
   return (
-    <>
+    <div className="flex min-h-screen flex-col bg-cream">
       {/* Three-zone header */}
-      <div className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8">
+      <header className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8">
         <div className="flex min-h-[36px] items-center justify-between gap-2 py-2.5 md:min-h-[40px] md:gap-4 md:py-3">
           {/* LEFT — tab identity + year navigation */}
           <div className="flex items-center gap-2 md:gap-4">
@@ -69,7 +69,7 @@ export function Shell() {
           </div>
 
           {/* CENTER — subtle business context */}
-          <div className="hidden md:flex items-center">
+          <div className="hidden items-center md:flex">
             {tab === "dashboard" && (
               <p className="text-xs text-muted-text">January — December</p>
             )}
@@ -80,10 +80,10 @@ export function Shell() {
             <ContextIndicator />
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Tab content */}
-      <main className="flex-1">
+      <main className="flex-1 w-full min-h-0">
         <div
           key={tab}
           className="tab-enter mx-auto w-full max-w-[1440px] px-3 pb-24 pt-2.5 sm:px-4 md:px-6 md:pb-12 md:pt-4 lg:px-8"
@@ -95,6 +95,6 @@ export function Shell() {
         </div>
       </main>
       <BottomNav active={tab} onChange={setTab} />
-    </>
+    </div>
   );
 }

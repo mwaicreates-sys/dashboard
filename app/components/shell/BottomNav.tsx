@@ -40,7 +40,7 @@ export function BottomNav({ active, onChange }: { active: TabId; onChange: (tab:
   return (
     <nav
       aria-label="Primary"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.4rem)]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.4rem)] md:hidden"
     >
       <div
         className={`pointer-events-auto flex items-center justify-around gap-0.5 rounded-full border border-border/60 bg-surface/85 px-1 py-0.5 shadow-[0_6px_18px_rgba(0,0,0,0.08)] backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 ease-out dark:border-white/10 dark:bg-[#16161a]/85 ${

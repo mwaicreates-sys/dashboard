@@ -33,7 +33,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-screen flex flex-col bg-cream text-primary-text">
         <ThemeProvider>
           <DashboardProvider>{children}</DashboardProvider>
         </ThemeProvider>

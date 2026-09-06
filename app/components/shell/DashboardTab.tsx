@@ -20,45 +20,36 @@ export function DashboardTab() {
   const router = useRouter();
 
   return (
-    <div className="space-y-2.5 md:space-y-3">
-      {/* Primary KPIs */}
-      <section className="grid grid-cols-1 gap-3 sm:gap-3.5 md:grid-cols-[320px_1fr] lg:grid-cols-[360px_1fr]">
-        <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
-          <p className="mb-2 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
-            Key metrics
-          </p>
-          <KPIGaugeGroup />
-        </div>
-        <div className="grid grid-cols-1 gap-2.5 rounded-2xl border border-border bg-surface p-3 sm:gap-3 sm:p-4 md:grid-cols-2">
-          <NetWorthGrowth />
-          <IncomeStreamStack />
-        </div>
-      </section>
+    <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="min-w-0 space-y-2.5 md:space-y-3">
+        {/* Primary KPIs */}
+        <section className="grid grid-cols-1 gap-3 sm:gap-3.5 md:grid-cols-[320px_1fr] lg:grid-cols-[360px_1fr]">
+          <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+            <p className="mb-2 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
+              Key metrics
+            </p>
+            <KPIGaugeGroup />
+          </div>
+          <div className="grid grid-cols-1 gap-2.5 rounded-2xl border border-border bg-surface p-3 sm:gap-3 sm:p-4 md:grid-cols-2">
+            <NetWorthGrowth />
+            <IncomeStreamStack />
+          </div>
+        </section>
 
-      {/* Four primary charts */}
-      <VisualizationGrid />
+        {/* Four primary charts */}
+        <VisualizationGrid />
 
-      {/* Monthly income & spending — January through December */}
-      <MonthlyPerformance onOpenWeeks={() => router.push("/weeks")} />
+        {/* Monthly income & spending — January through December */}
+        <MonthlyPerformance onOpenWeeks={() => router.push("/weeks")} />
 
-      {/* Primary financial analysis */}
-      <InformationGrid />
-
-      {/* ── Secondary utilities ─────────────────────────────────── */}
-      <div className="flex items-center gap-2.5 pt-1.5" aria-hidden="true">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-[8px] sm:text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-text">
-          More
-        </span>
-        <span className="h-px flex-1 bg-border" />
+        {/* Primary financial analysis */}
+        <InformationGrid />
       </div>
 
-      {/* Upcoming & recurring — secondary utility, near the bottom */}
-      <RecurringSection />
-
-      {/* Export & reports — final section */}
-      <ExportReports />
-
+      <aside className="min-w-0 space-y-3.5 lg:pt-0">
+        <RecurringSection />
+        <ExportReports />
+      </aside>
     </div>
   );
 }
