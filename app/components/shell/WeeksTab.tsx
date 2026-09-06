@@ -81,13 +81,13 @@ export function WeeksTab() {
   const catColor = (id: string) => categories.find((c) => c.id === id)?.color ?? "#999999";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5 md:space-y-3">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
             Weeks
           </p>
-          <h1 className="mt-1 text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
+          <h1 className="mt-1 text-3xl font-semibold leading-none text-primary-text md:text-4xl">
             {selectedYear}
           </h1>
           <p className="mt-1.5 text-xs text-secondary-text">
@@ -96,7 +96,7 @@ export function WeeksTab() {
         </div>
       </header>
 
-      <div className="flex items-center gap-4 text-[10px] text-muted-text">
+      <div className="flex items-center gap-3 text-[10px] text-muted-text sm:gap-4">
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-green" /> Income
         </span>
@@ -113,7 +113,7 @@ export function WeeksTab() {
           No weeks available for {selectedYear}.
         </p>
       ) : (
-        <ol className="space-y-2">
+        <ol className="space-y-1.5 md:space-y-2">
           {weeks.map((week) => {
             const tot = totals[week.weekNumber];
             const isOpen = open.has(`w${week.weekNumber}`);
@@ -127,17 +127,17 @@ export function WeeksTab() {
                   type="button"
                   onClick={() => toggle(week.weekNumber)}
                   aria-expanded={isOpen}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-card/40 focus-visible:ring-2 focus-visible:ring-blue/60"
+                  className="flex min-h-14 w-full items-center justify-between gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-card/40 focus-visible:ring-2 focus-visible:ring-blue/60 sm:gap-3 sm:px-4 sm:py-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 min-w-[56px] items-center justify-center rounded-lg bg-card px-2 text-xs font-semibold tabular-nums text-primary-text">
+                  <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                    <span className="flex h-8 min-w-[52px] shrink-0 items-center justify-center rounded-lg bg-card px-1.5 text-[11px] font-semibold tabular-nums text-primary-text sm:h-9 sm:min-w-[56px] sm:px-2 sm:text-xs">
                       Week {week.weekNumber}
                     </span>
-                    <div>
-                      <p className="text-xs font-medium text-primary-text">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-primary-text sm:whitespace-normal">
                         {weekRangeLabel(week.start, week.end)}
                       </p>
-                      <p className="text-[10px] text-muted-text">
+                      <p className="truncate text-[10px] text-muted-text">
                         {weekHasData
                           ? `${tot.count} transactions · ${formatMoney(tot.income)} in · ${formatMoney(tot.expense)} out`
                           : "No activity"}
@@ -150,7 +150,7 @@ export function WeeksTab() {
                 </button>
 
                 {isOpen ? (
-                  <div className="border-t border-light-border px-4 py-2">
+                  <div className="border-t border-light-border px-3 py-1.5 sm:px-4 sm:py-2">
                     {week.days.map((day) => {
                       const dayTx = byDay[day.date] ?? [];
                       const dayIncome = dayTx
@@ -163,7 +163,7 @@ export function WeeksTab() {
                       const dayActs = activities.filter((a) => a.date === day.date);
                       const isToday = day.date === today;
                       return (
-                        <div key={day.date} className="border-b border-light-border py-2 last:border-b-0">
+                        <div key={day.date} className="border-b border-light-border py-1.5 last:border-b-0 sm:py-2">
                           <div className="flex items-center justify-between gap-2">
                             <button
                               type="button"
