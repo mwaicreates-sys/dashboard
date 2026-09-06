@@ -63,6 +63,11 @@ export async function POST(request: NextRequest) {
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !publishableKey || !serviceKey) {
+    console.error("Owner activation configuration is incomplete.", {
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasPublishableKey: Boolean(publishableKey),
+      hasServiceRoleKey: Boolean(serviceKey),
+    });
     return NextResponse.json(
       { ok: false, message: "Authentication service is not configured." },
       { status: 500 }
@@ -85,7 +90,16 @@ export async function POST(request: NextRequest) {
     .limit(10);
 
   if (claimError) {
-    return NextResponse.json({ ok: false, message: "Could not verify the access code." }, { status: 500 });
+    console.error("Owner activation claim lookup failed.", {
+      message: claimError.message,
+      code: claimError.code,
+      details: claimError.details,
+      hint: claimError.hint,
+    });
+    return NextResponse.json(
+      { ok: false, message: "Could not verify the access code." },
+      { status: 500 }
+    );
   }
   const claims = (claimData as ClaimRow[] | null) ?? [];
   if (claims.length === 0) {
