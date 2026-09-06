@@ -17,7 +17,7 @@ export function MonthlyIncomeOutflow() {
   const { monthlyIncomeOutflow } = useDashboardData();
 
   return (
-    <div className="flex h-full min-h-[220px] w-full flex-col">
+    <div className="flex h-full min-h-[200px] w-full flex-col">
       <h3 className="mb-1 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text">
         Monthly Income vs Outflow
       </h3>

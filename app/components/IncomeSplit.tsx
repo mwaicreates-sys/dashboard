@@ -14,7 +14,7 @@ export function IncomeSplit() {
   const hasData = incomeSplit.length > 0;
 
   return (
-    <div className="flex h-full min-h-[220px] w-full min-w-0 flex-col">
+    <div className="flex h-full min-h-[200px] w-full min-w-0 flex-col">
       <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">
         Income Split
       </h3>

@@ -11,7 +11,7 @@ const cardLink =
 
 export function VisualizationGrid() {
   return (
-    <div className="grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Link
         href="/outflow"
         aria-label="Monthly Income vs Outflow — view outflow details"
