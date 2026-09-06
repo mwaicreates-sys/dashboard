@@ -116,7 +116,7 @@ export function ActivityTab() {
   };
 
   return (
-    <div className="space-y-2.5 md:space-y-3">
+    <div className="flex flex-col gap-3">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
@@ -132,7 +132,7 @@ export function ActivityTab() {
       </header>
 
       {/* Primary Entry area — dominant on mobile */}
-      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-3.5 md:p-5">
+      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-3.5 md:p-4">
         <label className="mb-2 block md:mb-3">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-text">
             What did you do today?
@@ -204,9 +204,17 @@ export function ActivityTab() {
         ) : null}
       </form>
 
-      {/* Filters — secondary, below Entry */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="-mx-1 flex flex-nowrap items-center gap-1 overflow-x-auto px-1 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible">
+      {/* Goals (left) + To-Do review (right) */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
+        <GoalsProgress />
+
+        {/* To-Do review frame */}
+        <section className="flex flex-col rounded-2xl border border-border bg-surface">
+          <div className="flex items-center justify-between border-b border-light-border px-3 py-2">
+            <h2 className="text-sm font-semibold text-primary-text">To-Do review</h2>
+            <span className="text-[10px] text-muted-text">{filtered.length} shown</span>
+          </div>
+          <div className="flex flex-nowrap items-center gap-1 overflow-x-auto border-b border-light-border px-2 py-1.5 sm:flex-wrap sm:overflow-visible">
           {(
             [
               { id: "all", label: "All" },
@@ -231,19 +239,18 @@ export function ActivityTab() {
             </button>
           ))}
         </div>
-        <span className="text-[10px] text-muted-text">{filtered.length} shown</span>
-      </div>
 
-      {/* Timeline */}
-      {groups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
-          <p className="text-sm font-medium text-secondary-text">Nothing here yet</p>
-          <p className="mt-1 text-xs text-muted-text">
-            Add your first activity above.
-          </p>
-        </div>
-      ) : (
-        <section className="space-y-3">
+        {/* Scrollable review list — long lists stay inside the frame */}
+        <div className="max-h-[420px] min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">
+          {groups.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-6 text-center">
+              <p className="text-sm font-medium text-secondary-text">Nothing here yet</p>
+              <p className="mt-1 text-xs text-muted-text">
+                Add your first activity above.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
           {groups.map(([dateKey, items]) => (
             <div key={dateKey}>
               <div className="mb-1.5 flex items-center gap-2 px-1">
@@ -395,11 +402,11 @@ export function ActivityTab() {
               </div>
             </div>
           ))}
+            </div>
+          )}
+        </div>
         </section>
-      )}
-
-      {/* ── Goals ─────────────────────────────────────────────── */}
-      <GoalsProgress />
+      </div>
     </div>
   );
 }
