@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDashboardData } from "@/lib/dashboardData";
 import { Transaction } from "@/data/model/types";
 import { getWeeksOfYear, shortDayLabel, weekRangeLabel, formatMoney, todayISO, relativeDayLabel } from "@/lib/dates";
@@ -20,6 +20,7 @@ interface WeekTotals {
 export function WeeksTab() {
   const { selectedYear, displayTransactions, categories, activities } = useDashboardData();
   const [dayView, setDayView] = useState<string | null>(null);
+  const currentWeekRef = useRef<HTMLLIElement | null>(null);
   const today = todayISO();
 
   const yearTx = useMemo(
@@ -59,14 +60,25 @@ export function WeeksTab() {
     return out;
   }, [weeks, byDay]);
 
-  // Expand the first week that contains data by default.
-  const defaultOpen = useMemo(() => {
-    const first = weeks.find((w) => totals[w.weekNumber].count > 0);
-    return new Set<string>(first ? [`w${first.weekNumber}`] : []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const isCurrentYear = selectedYear === Number(today.slice(0, 4));
+  const currentWeek = isCurrentYear
+    ? weeks.find((week) => week.days.some((day) => day.date === today))
+    : undefined;
+  const initialWeek = currentWeek ?? weeks[0];
+  const [open, setOpen] = useState<Set<string>>(
+    () => new Set(initialWeek ? [`w${initialWeek.weekNumber}`] : [])
+  );
 
-  const [open, setOpen] = useState<Set<string>>(defaultOpen);
+  useEffect(() => {
+    const target = currentWeek ?? weeks[0];
+    setOpen(new Set(target ? [`w${target.weekNumber}`] : []));
+    if (!target) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      currentWeekRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedYear, currentWeek?.weekNumber, weeks]);
 
   const toggle = (weekNumber: number) => {
     const key = `w${weekNumber}`;
@@ -118,10 +130,16 @@ export function WeeksTab() {
             const tot = totals[week.weekNumber];
             const isOpen = open.has(`w${week.weekNumber}`);
             const weekHasData = tot.count > 0;
+            const isCurrentWeek = currentWeek?.weekNumber === week.weekNumber;
             return (
               <li
                 key={week.weekNumber}
-                className="overflow-hidden rounded-2xl border border-border bg-surface"
+                ref={isCurrentWeek ? currentWeekRef : undefined}
+                className={`overflow-hidden rounded-2xl border bg-surface ${
+                  isCurrentWeek
+                    ? "border-blue/60 ring-1 ring-blue/20"
+                    : "border-border"
+                }`}
               >
                 <button
                   type="button"
@@ -134,8 +152,13 @@ export function WeeksTab() {
                       Week {week.weekNumber}
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate text-xs font-medium text-primary-text sm:whitespace-normal">
+                      <p className="flex items-center gap-1.5 truncate text-xs font-medium text-primary-text sm:whitespace-normal">
                         {weekRangeLabel(week.start, week.end)}
+                        {isCurrentWeek ? (
+                          <span className="shrink-0 rounded-full bg-blue/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-blue">
+                            Current
+                          </span>
+                        ) : null}
                       </p>
                       <p className="truncate text-[10px] text-muted-text">
                         {weekHasData
