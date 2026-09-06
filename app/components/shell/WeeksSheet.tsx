@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { WeeksTab } from "./WeeksTab";
 import { XIcon } from "./icons";
 
@@ -9,6 +9,7 @@ import { XIcon } from "./icons";
  * from the Dashboard without a dedicated navigation tab.
  */
 export function WeeksSheet({ onClose }: { onClose: () => void }) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -24,7 +25,8 @@ export function WeeksSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] overflow-y-auto overscroll-contain bg-surface/95 backdrop-blur-md"
+      ref={scrollContainerRef}
+      className="fixed inset-0 z-[70] h-screen max-h-screen overflow-y-auto overscroll-contain bg-surface/95 backdrop-blur-md touch-pan-y"
       role="dialog"
       aria-modal="true"
       aria-label="Weekly breakdown"
@@ -40,7 +42,7 @@ export function WeeksSheet({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <div className="px-3 pb-40 md:px-4">
-        <WeeksTab />
+        <WeeksTab scrollContainerRef={scrollContainerRef} />
       </div>
     </div>
   );

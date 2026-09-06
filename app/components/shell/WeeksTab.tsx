@@ -6,6 +6,7 @@ import { Transaction } from "@/data/model/types";
 import { getWeeksOfYear, shortDayLabel, weekRangeLabel, formatMoney, todayISO, relativeDayLabel } from "@/lib/dates";
 import { ChevronDownIcon } from "./icons";
 import { DayView } from "./DayView";
+import type { RefObject } from "react";
 
 interface TxByDay {
   [date: string]: Transaction[];
@@ -17,7 +18,11 @@ interface WeekTotals {
   expense: number;
 }
 
-export function WeeksTab() {
+export function WeeksTab({
+  scrollContainerRef,
+}: {
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+}) {
   const { selectedYear, displayTransactions, categories, activities } = useDashboardData();
   const [dayView, setDayView] = useState<string | null>(null);
   const currentWeekRef = useRef<HTMLLIElement | null>(null);
@@ -75,10 +80,20 @@ export function WeeksTab() {
     if (!target) return;
 
     const frame = window.requestAnimationFrame(() => {
-      currentWeekRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+      const container = scrollContainerRef?.current;
+      const targetElement = currentWeekRef.current;
+      if (!container || !targetElement) return;
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = targetElement.getBoundingClientRect();
+      const targetTop =
+        container.scrollTop +
+        targetRect.top -
+        containerRect.top -
+        (container.clientHeight - targetElement.offsetHeight) / 2;
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [selectedYear, currentWeek?.weekNumber, weeks]);
+  }, [scrollContainerRef, selectedYear, currentWeek?.weekNumber, weeks]);
 
   const toggle = (weekNumber: number) => {
     const key = `w${weekNumber}`;
