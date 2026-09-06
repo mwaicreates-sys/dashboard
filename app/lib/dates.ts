@@ -76,38 +76,44 @@ export interface WeekDay {
 
 export interface YearWeek {
   weekNumber: number;
-  /** Monday of the week (may spill into the previous calendar year). */
+  /** First day of the period, always within the selected calendar year. */
   start: string;
-  /** Sunday of the week (may spill into the next calendar year). */
+  /** Last day of the period, always within the selected calendar year. */
   end: string;
-  /** Monday → Sunday. */
+  /** Monday → Sunday, clipped at the selected year's boundaries. */
   days: WeekDay[];
 }
 
 /**
- * Weeks of a calendar year. Week 1 is the Monday-based week containing
- * January 1. Weeks run Monday → Sunday.
+ * Weeks of a calendar year. The first and last periods are clipped to the
+ * calendar year so January 1 through December 31 are always represented.
  */
 export function getWeeksOfYear(year: number): YearWeek[] {
-  const start = new Date(year, 0, 1);
-  const offset = (start.getDay() + 6) % 7; // 0 = Monday
-  start.setDate(start.getDate() - offset);
-
-  const end = new Date(year, 11, 31);
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year, 11, 31);
   const weeks: YearWeek[] = [];
-  const cursor = new Date(start);
+  const cursor = new Date(yearStart);
   let weekNumber = 1;
 
-  while (cursor.getTime() <= end.getTime()) {
+  while (cursor.getTime() <= yearEnd.getTime()) {
+    const periodEnd = new Date(cursor);
+    if (cursor.getTime() === yearStart.getTime()) {
+      periodEnd.setDate(periodEnd.getDate() + (7 - periodEnd.getDay()) % 7);
+    } else {
+      periodEnd.setDate(periodEnd.getDate() + 6);
+    }
+    if (periodEnd.getTime() > yearEnd.getTime()) {
+      periodEnd.setTime(yearEnd.getTime());
+    }
+
     const days: WeekDay[] = [];
-    for (let i = 0; i < 7; i++) {
-      days.push({ date: toISODate(cursor), label: DAY_LABELS[cursor.getDay()] });
-      cursor.setDate(cursor.getDate() + 1);
+    const dayCursor = new Date(cursor);
+    while (dayCursor.getTime() <= periodEnd.getTime()) {
+      days.push({ date: toISODate(dayCursor), label: DAY_LABELS[dayCursor.getDay()] });
+      dayCursor.setDate(dayCursor.getDate() + 1);
     }
-    const inYear = days.some((d) => d.date.startsWith(String(year)));
-    if (inYear) {
-      weeks.push({ weekNumber: weekNumber++, start: days[0].date, end: days[6].date, days });
-    }
+    weeks.push({ weekNumber: weekNumber++, start: days[0].date, end: days[days.length - 1].date, days });
+    cursor.setTime(dayCursor.getTime());
   }
   return weeks;
 }

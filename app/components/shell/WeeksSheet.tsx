@@ -15,18 +15,15 @@ export function WeeksSheet({ onClose }: { onClose: () => void }) {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose]);
 
   return (
     <div
       ref={scrollContainerRef}
-      className="fixed inset-0 z-[70] h-screen max-h-screen overflow-y-auto overscroll-contain bg-surface/95 backdrop-blur-md touch-pan-y"
+      className="fixed inset-0 z-[70] h-dvh min-h-0 overflow-y-auto overscroll-y-contain bg-surface/95 backdrop-blur-md touch-pan-y"
       role="dialog"
       aria-modal="true"
       aria-label="Weekly breakdown"

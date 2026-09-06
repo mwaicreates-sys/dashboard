@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useDashboardData } from "@/lib/dashboardData";
 import { Transaction } from "@/data/model/types";
 import { getWeeksOfYear, shortDayLabel, weekRangeLabel, formatMoney, todayISO, relativeDayLabel } from "@/lib/dates";
 import { ChevronDownIcon } from "./icons";
 import { DayView } from "./DayView";
-import type { RefObject } from "react";
 
 interface TxByDay {
   [date: string]: Transaction[];
@@ -25,7 +24,8 @@ export function WeeksTab({
 }) {
   const { selectedYear, displayTransactions, categories, activities } = useDashboardData();
   const [dayView, setDayView] = useState<string | null>(null);
-  const currentWeekRef = useRef<HTMLLIElement | null>(null);
+  const initialWeekRef = useRef<HTMLLIElement | null>(null);
+  const initialPositionedRef = useRef(false);
   const today = todayISO();
 
   const yearTx = useMemo(
@@ -75,13 +75,11 @@ export function WeeksTab({
   );
 
   useEffect(() => {
-    const target = currentWeek ?? weeks[0];
-    setOpen(new Set(target ? [`w${target.weekNumber}`] : []));
-    if (!target) return;
-
+    if (initialPositionedRef.current) return;
+    initialPositionedRef.current = true;
     const frame = window.requestAnimationFrame(() => {
       const container = scrollContainerRef?.current;
-      const targetElement = currentWeekRef.current;
+      const targetElement = initialWeekRef.current;
       if (!container || !targetElement) return;
       const containerRect = container.getBoundingClientRect();
       const targetRect = targetElement.getBoundingClientRect();
@@ -90,10 +88,10 @@ export function WeeksTab({
         targetRect.top -
         containerRect.top -
         (container.clientHeight - targetElement.offsetHeight) / 2;
-      container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: "auto" });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [scrollContainerRef, selectedYear, currentWeek?.weekNumber, weeks]);
+  }, [scrollContainerRef]);
 
   const toggle = (weekNumber: number) => {
     const key = `w${weekNumber}`;
@@ -149,7 +147,7 @@ export function WeeksTab({
             return (
               <li
                 key={week.weekNumber}
-                ref={isCurrentWeek ? currentWeekRef : undefined}
+                ref={week.weekNumber === initialWeek?.weekNumber ? initialWeekRef : undefined}
                 className={`overflow-hidden rounded-2xl border bg-surface ${
                   isCurrentWeek
                     ? "border-blue/60 ring-1 ring-blue/20"
