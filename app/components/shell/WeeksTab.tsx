@@ -80,9 +80,16 @@ export function WeeksTab({
     const frame = window.requestAnimationFrame(() => {
       const container = scrollContainerRef?.current;
       const targetElement = initialWeekRef.current;
-      if (!container || !targetElement) return;
-      const containerRect = container.getBoundingClientRect();
+      if (!targetElement) return;
       const targetRect = targetElement.getBoundingClientRect();
+      if (!container) {
+        window.scrollTo({
+          top: Math.max(0, window.scrollY + targetRect.top - (window.innerHeight - targetElement.offsetHeight) / 2),
+          behavior: "auto",
+        });
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
       const targetTop =
         container.scrollTop +
         targetRect.top -

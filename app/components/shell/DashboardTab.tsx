@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { KPIGaugeGroup } from "@/components/CircularKPI";
 import { NetWorthGrowth, IncomeStreamStack } from "@/components/HeaderCharts";
 import { VisualizationGrid } from "@/components/VisualizationGrid";
@@ -8,7 +8,6 @@ import { InformationGrid } from "@/components/InformationGrid";
 import { MonthlyPerformance } from "./MonthlyPerformance";
 import { RecurringSection } from "./RecurringSection";
 import { ExportReports } from "./ExportReports";
-import { WeeksSheet } from "./WeeksSheet";
 
 /**
  * Dashboard — financial analysis for one calendar year.
@@ -18,7 +17,7 @@ import { WeeksSheet } from "./WeeksSheet";
  * Year context and tab identity are rendered by the shell header.
  */
 export function DashboardTab() {
-  const [weeksOpen, setWeeksOpen] = useState(false);
+  const router = useRouter();
 
   return (
     <div className="space-y-2.5 md:space-y-3">
@@ -40,7 +39,7 @@ export function DashboardTab() {
       <VisualizationGrid />
 
       {/* Monthly income & spending — January through December */}
-      <MonthlyPerformance onOpenWeeks={() => setWeeksOpen(true)} />
+      <MonthlyPerformance onOpenWeeks={() => router.push("/weeks")} />
 
       {/* Primary financial analysis */}
       <InformationGrid />
@@ -60,8 +59,6 @@ export function DashboardTab() {
       {/* Export & reports — final section */}
       <ExportReports />
 
-      {/* Weekly breakdown sheet (Year → Week → Day) */}
-      {weeksOpen ? <WeeksSheet onClose={() => setWeeksOpen(false)} /> : null}
     </div>
   );
 }
