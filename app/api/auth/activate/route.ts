@@ -32,6 +32,15 @@ function sha256Hex(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+function safeErrorDetails(error: object & { message?: string; code?: string }) {
+  return {
+    message: error.message,
+    code: error.code,
+    details: "details" in error && typeof error.details === "string" ? error.details : undefined,
+    hint: "hint" in error && typeof error.hint === "string" ? error.hint : undefined,
+  };
+}
+
 interface ClaimRow {
   id: string;
   business_id: string;
@@ -152,35 +161,44 @@ export async function POST(request: NextRequest) {
   const randomPassword = randomBytes(32).toString("base64");
   let userId: string | null = null;
 
-  const { data: profile } = await service
-    .from("profiles")
-    .select("id")
-    .eq("email", email)
-    .limit(1)
-    .maybeSingle();
-  userId = profile?.id ?? null;
+  // Resolve the Auth identity from Auth itself, not from a potentially stale
+  // profile row. This preserves one identity across devices and businesses.
+  const { data: listed, error: listUsersError } = await service.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  if (listUsersError) {
+    console.error("Owner activation Auth-user lookup failed.", safeErrorDetails(listUsersError));
+    return NextResponse.json(
+      { ok: false, message: "Could not resolve the owner account." },
+      { status: 500 }
+    );
+  }
+  const existingUser = listed.users.find(
+    (user) => (user.email ?? "").trim().toLowerCase() === email
+  );
+  userId = existingUser?.id ?? null;
 
   if (!userId) {
     const { data: created, error: createError } = await service.auth.admin.createUser({
       email,
       password: randomPassword,
-      email_confirm: true, // the activation code replaces email confirmation
+      email_confirm: true,
       user_metadata: { full_name: claimRow.owner_name ?? null },
     });
-    if (!createError && created.user) {
-      userId = created.user.id;
-    } else {
-      // The account may already exist (earlier flow / concurrent activation).
-      const { data: listed } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      const match = listed?.users?.find((u) => (u.email ?? "").toLowerCase() === email);
-      if (!match?.id) {
-        return NextResponse.json(
-          { ok: false, message: "Could not provision the owner account." },
-          { status: 500 }
-        );
-      }
-      userId = match.id;
+    if (createError || !created.user) {
+      console.error(
+        "Owner activation Auth-user provisioning failed.",
+        createError
+          ? safeErrorDetails(createError)
+          : { message: "Auth user was not returned." }
+      );
+      return NextResponse.json(
+        { ok: false, message: "Could not provision the owner account." },
+        { status: 500 }
+      );
     }
+    userId = created.user.id;
   }
 
   // A throwaway server-generated password lets the password grant below mint
@@ -191,15 +209,70 @@ export async function POST(request: NextRequest) {
     email_confirm: true,
   });
   if (passwordError) {
+    console.error(
+      "Owner activation Auth-user password update failed.",
+      safeErrorDetails(passwordError)
+    );
     return NextResponse.json(
-      { ok: false, message: "Could not complete activation. Please try again." },
+      { ok: false, message: "Could not prepare the owner account." },
       { status: 500 }
     );
   }
 
-  // 4) Mint a GENUINE persistent Supabase session (cookie-based; refreshed by
-  //    proxy.ts on every request). auth.uid() becomes the real owner id, so
-  //    RLS, business_members and tenant isolation work unchanged.
+  // 4) Attach the owner before authenticating and consuming the claim, so a
+  // membership or authentication failure does not burn a valid code.
+  const { data: existingMembership, error: membershipLookupError } = await service
+    .from("business_members")
+    .select("id, role")
+    .eq("business_id", claimRow.business_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (membershipLookupError) {
+    console.error("Owner activation membership lookup failed.", {
+      message: membershipLookupError.message,
+      code: membershipLookupError.code,
+      details: membershipLookupError.details,
+      hint: membershipLookupError.hint,
+    });
+    return NextResponse.json(
+      { ok: false, message: "Could not verify the business membership." },
+      { status: 500 }
+    );
+  }
+
+  let memberError = null;
+  if (existingMembership?.role !== "owner") {
+    if (existingMembership) {
+      const { error } = await service
+        .from("business_members")
+        .update({ role: "owner" })
+        .eq("id", existingMembership.id);
+      memberError = error;
+    } else {
+      const { error } = await service
+        .from("business_members")
+        .insert({ business_id: claimRow.business_id, user_id: userId, role: "owner" });
+      memberError = error;
+    }
+  }
+  if (memberError) {
+    console.error("Owner activation membership write failed.", {
+      message: memberError.message,
+      code: memberError.code,
+      details: memberError.details,
+      hint: memberError.hint,
+    });
+  }
+  if (memberError) {
+    return NextResponse.json(
+      { ok: false, message: "Could not attach the owner to the business." },
+      { status: 500 }
+    );
+  }
+
+  // 5) Mint a GENUINE persistent Supabase session (cookie-based; refreshed by
+  // proxy.ts on every request). auth.uid() becomes the real owner id, so
+  // RLS, business_members and tenant isolation work unchanged.
   const cookieWrites: Array<{ name: string; value: string; options?: CookieOptions }> = [];
   const ssr = createServerClient(supabaseUrl, publishableKey, {
     cookies: {
@@ -217,24 +290,28 @@ export async function POST(request: NextRequest) {
     password: randomPassword,
   });
   if (signInError) {
+    console.error("Owner activation Supabase sign-in failed.", safeErrorDetails(signInError));
     return NextResponse.json(
       { ok: false, message: "Could not sign in the owner account." },
       { status: 500 }
     );
   }
 
-  // 5) Attach the owner before consuming the claim, so a membership failure
-  // does not burn a valid code.
-  //    Upsert guarantees exactly one membership row per (business, user).
-  const { error: memberError } = await service
-    .from("business_members")
-    .upsert(
-      { business_id: claimRow.business_id, user_id: userId, role: "owner" },
-      { onConflict: "business_id,user_id" }
-    );
-  if (memberError) {
+  // Keep the provisioned owner contact on the business in sync before
+  // consuming the claim.
+  const { error: businessUpdateError } = await service
+    .from("businesses")
+    .update({ owner_email: email })
+    .eq("id", claimRow.business_id);
+  if (businessUpdateError) {
+    console.error("Owner activation business update failed.", {
+      message: businessUpdateError.message,
+      code: businessUpdateError.code,
+      details: businessUpdateError.details,
+      hint: businessUpdateError.hint,
+    });
     return NextResponse.json(
-      { ok: false, message: "Could not attach the owner to the business." },
+      { ok: false, message: "Could not update the provisioned business." },
       { status: 500 }
     );
   }
@@ -250,22 +327,12 @@ export async function POST(request: NextRequest) {
     .select("id")
     .maybeSingle();
   if (consumeError || !consumed) {
+    if (consumeError) {
+      console.error("Owner activation claim consumption failed.", safeErrorDetails(consumeError));
+    }
     return NextResponse.json(
       { ok: false, message: "This access code has already been used." },
       { status: 409 }
-    );
-  }
-
-  // Keep the provisioned owner contact on the business in sync (same rule as
-  // accept_owner_claim). Never creates another business.
-  const { error: businessUpdateError } = await service
-    .from("businesses")
-    .update({ owner_email: email })
-    .eq("id", claimRow.business_id);
-  if (businessUpdateError) {
-    return NextResponse.json(
-      { ok: false, message: "Could not update the provisioned business." },
-      { status: 500 }
     );
   }
 
