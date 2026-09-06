@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { clearActiveBusinessId, clearTenantLocalData, setCloudOwnerTag } from "@/lib/cloudSync";
 import { clearAdminViewing } from "@/lib/platformAdmin";
@@ -110,6 +111,19 @@ export default function AdminProfilePage() {
           <ProfileIcon className="h-4 w-4" />
           {busy ? "Signing out…" : "Sign out"}
         </button>
+      </SectionCard>
+
+      <SectionCard title="Platform Ownership">
+        <p className="text-[11px] leading-relaxed text-muted-text">
+          Transfer platform control to a separate account. This is not an email
+          edit and permanently revokes your current Platform Admin access.
+        </p>
+        <Link
+          href="/admin/settings"
+          className="mt-3 inline-flex h-9 items-center rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60"
+        >
+          Manage Platform Ownership
+        </Link>
       </SectionCard>
     </div>
   );
