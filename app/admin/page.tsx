@@ -60,7 +60,7 @@ export default function AdminDashboard() {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       {/* Greeting header */}
       <header>
         <p className="font-inter text-[10px] font-semibold uppercase tracking-[0.14em] text-secondary-text sm:text-[11px]">
@@ -69,7 +69,7 @@ export default function AdminDashboard() {
         <h1 className="mt-1.5 font-inter text-[22px] font-bold tracking-tight text-primary-text sm:text-[26px] md:text-[28px] lg:text-[32px]">
           {greeting ? `${greeting}${name ? `, ${name}` : ""}` : "Platform overview"}
         </h1>
-        <p className="mt-1 text-[12px] sm:text-[13px] font-medium text-secondary-text">
+        <p className="mt-1 w-full min-w-0 text-[12px] sm:text-[13px] font-medium text-secondary-text">
           A snapshot of every workspace on the platform.
         </p>
       </header>
@@ -78,7 +78,7 @@ export default function AdminDashboard() {
 
       {!data && !error ? (
         <>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 min-w-0 sm:grid-cols-4">
             <SkeletonBlock className="h-20 sm:h-24" />
             <SkeletonBlock className="h-20 sm:h-24" />
             <SkeletonBlock className="h-20 sm:h-24" />
@@ -92,7 +92,7 @@ export default function AdminDashboard() {
       {data ? (
         <>
           {/* KPI metrics grid */}
-          <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <section className="grid grid-cols-2 gap-2.5 min-w-0 sm:grid-cols-4">
             <KpiCard
               label="Total Businesses"
               value={String(data.businessCount)}

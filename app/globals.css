@@ -66,15 +66,26 @@ body {
 @keyframes dropdown-enter {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.97);
+    transform: translateY(-6px) scale(0.97) translateX(-50%);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1) translateX(-50%);
   }
 }
 .dropdown-enter {
   animation: dropdown-enter 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Mobile-first notification panel positioning */
+@media (max-width: 639px) {
+  .notification-panel-mobile {
+    left: 12px !important;
+    right: 12px !important;
+    width: calc(100vw - 24px) !important;
+    max-width: none !important;
+    transform: translateX(0) !important;
+  }
 }
 
 /* Subtle entrance for tab switches. The `to` keyframe must NOT persist a
