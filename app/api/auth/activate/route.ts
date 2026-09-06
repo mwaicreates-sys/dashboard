@@ -35,8 +35,8 @@ function sha256Hex(value: string): string {
 interface ClaimRow {
   id: string;
   business_id: string;
-  email: string | null;
-  name: string | null;
+  owner_email: string | null;
+  owner_name: string | null;
   status: string;
   expires_at: string;
   business: { id?: string } | null;
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
   const { data: claimData, error: claimError } = await service
     .from("business_owner_claims")
     .select(
-      "id, business_id, email, name, status, expires_at, business:businesses ( id, name )"
+      "id, business_id, owner_email, owner_name, status, expires_at, business:businesses ( id, name )"
     )
     .eq("activation_code_hash", sha256Hex(code))
     .limit(1);
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
   if (claimRow.status !== "pending") {
     return NextResponse.json({ ok: false, message: "This access code has expired." }, { status: 401 });
   }
-  if ((claimRow.email ?? "").toLowerCase() !== email) {
+  if ((claimRow.owner_email ?? "").trim().toLowerCase() !== email) {
     // Code is real but the email is not the provisioned owner.
     return NextResponse.json({ ok: false, message: "Invalid email or access code." }, { status: 401 });
   }
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       email,
       password: randomPassword,
       email_confirm: true, // the activation code replaces email confirmation
-      user_metadata: { full_name: claimRow.name ?? null },
+      user_metadata: { full_name: claimRow.owner_name ?? null },
     });
     if (!createError && created.user) {
       userId = created.user.id;
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
   const nowIso = new Date().toISOString();
   const { data: consumed, error: consumeError } = await service
     .from("business_owner_claims")
-    .update({ status: "used", used_at: nowIso, consumed_by: userId, consumed_at: nowIso })
+    .update({ status: "used", used_at: nowIso, used_by: userId, consumed_by: userId, consumed_at: nowIso })
     .eq("id", claimRow.id)
     .eq("status", "pending")
     .select("id")
