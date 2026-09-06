@@ -39,7 +39,6 @@ interface ClaimRow {
   owner_name: string | null;
   status: string;
   expires_at: string;
-  business: { id?: string } | null;
 }
 
 export async function POST(request: NextRequest) {
@@ -76,23 +75,34 @@ export async function POST(request: NextRequest) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // 1) Look the claim up by the HASHED code (codes are never stored plaintext).
+  // 1) Look claims up by the normalized code hash. The database stores only
+  // the hash; matching email and lifecycle state are checked separately.
+  const submittedCodeHash = sha256Hex(code);
   const { data: claimData, error: claimError } = await service
     .from("business_owner_claims")
-    .select(
-      "id, business_id, owner_email, owner_name, status, expires_at, business:businesses ( id, name )"
-    )
-    .eq("activation_code_hash", sha256Hex(code))
-    .limit(1);
+    .select("id, business_id, owner_email, owner_name, status, expires_at")
+    .eq("activation_code_hash", submittedCodeHash)
+    .limit(10);
 
-  const claimRow = (claimData as ClaimRow[] | null)?.[0] ?? null;
-  if (claimError || !claimRow) {
-    // Generic on purpose: a wrong email + wrong code is indistinguishable
-    // from a wrong code, so nothing about provisioned businesses leaks.
-    return NextResponse.json({ ok: false, message: "Invalid email or access code." }, { status: 401 });
+  if (claimError) {
+    return NextResponse.json({ ok: false, message: "Could not verify the access code." }, { status: 500 });
+  }
+  const claims = (claimData as ClaimRow[] | null) ?? [];
+  if (claims.length === 0) {
+    return NextResponse.json({ ok: false, message: "Invalid access code." }, { status: 401 });
   }
 
-  // 2) Precise, useful errors once the code itself has been proven real.
+  const claimRow = claims.find(
+    (claim) => (claim.owner_email ?? "").trim().toLowerCase() === email
+  );
+  if (!claimRow) {
+    return NextResponse.json(
+      { ok: false, message: "The access code does not match this email." },
+      { status: 401 }
+    );
+  }
+
+  // 2) Check the canonical claim lifecycle after the code and email match.
   if (claimRow.status === "used") {
     return NextResponse.json(
       { ok: false, message: "This access code has already been used." },
@@ -100,17 +110,24 @@ export async function POST(request: NextRequest) {
     );
   }
   if (claimRow.status !== "pending") {
-    return NextResponse.json({ ok: false, message: "This access code has expired." }, { status: 401 });
-  }
-  if ((claimRow.owner_email ?? "").trim().toLowerCase() !== email) {
-    // Code is real but the email is not the provisioned owner.
-    return NextResponse.json({ ok: false, message: "Invalid email or access code." }, { status: 401 });
+    return NextResponse.json({ ok: false, message: "This access code has been revoked." }, { status: 401 });
   }
   const expiresAt = new Date(claimRow.expires_at).getTime();
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
     return NextResponse.json({ ok: false, message: "This access code has expired." }, { status: 401 });
   }
-  if (!claimRow.business?.id) {
+  const { data: business, error: businessError } = await service
+    .from("businesses")
+    .select("id")
+    .eq("id", claimRow.business_id)
+    .maybeSingle();
+  if (businessError) {
+    return NextResponse.json(
+      { ok: false, message: "Could not verify the provisioned business." },
+      { status: 500 }
+    );
+  }
+  if (!business) {
     return NextResponse.json(
       { ok: false, message: "This business is no longer available." },
       { status: 401 }
@@ -143,7 +160,10 @@ export async function POST(request: NextRequest) {
       const { data: listed } = await service.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const match = listed?.users?.find((u) => (u.email ?? "").toLowerCase() === email);
       if (!match?.id) {
-        return NextResponse.json({ ok: false, message: "Invalid email or access code." }, { status: 401 });
+        return NextResponse.json(
+          { ok: false, message: "Could not provision the owner account." },
+          { status: 500 }
+        );
       }
       userId = match.id;
     }
@@ -184,13 +204,29 @@ export async function POST(request: NextRequest) {
   });
   if (signInError) {
     return NextResponse.json(
-      { ok: false, message: "Could not complete activation. Please contact your platform administrator." },
+      { ok: false, message: "Could not sign in the owner account." },
       { status: 500 }
     );
   }
 
-  // 5) Consume the code ATOMICALLY (single-use). The status filter makes this
-  //    a compare-and-set: two concurrent activations cannot both succeed.
+  // 5) Attach the owner before consuming the claim, so a membership failure
+  // does not burn a valid code.
+  //    Upsert guarantees exactly one membership row per (business, user).
+  const { error: memberError } = await service
+    .from("business_members")
+    .upsert(
+      { business_id: claimRow.business_id, user_id: userId, role: "owner" },
+      { onConflict: "business_id,user_id" }
+    );
+  if (memberError) {
+    return NextResponse.json(
+      { ok: false, message: "Could not attach the owner to the business." },
+      { status: 500 }
+    );
+  }
+
+  // 6) Consume the code atomically only after authentication and membership
+  // succeed. The status filter prevents concurrent activations from sharing it.
   const nowIso = new Date().toISOString();
   const { data: consumed, error: consumeError } = await service
     .from("business_owner_claims")
@@ -206,31 +242,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 6) Attach the owner to the EXACT provisioned business — role owner.
-  //    Upsert guarantees exactly one membership row per (business, user).
-  const { error: memberError } = await service
-    .from("business_members")
-    .upsert(
-      { business_id: claimRow.business_id, user_id: userId, role: "owner" },
-      { onConflict: "business_id,user_id" }
-    );
-  if (memberError) {
+  // Keep the provisioned owner contact on the business in sync (same rule as
+  // accept_owner_claim). Never creates another business.
+  const { error: businessUpdateError } = await service
+    .from("businesses")
+    .update({ owner_email: email })
+    .eq("id", claimRow.business_id);
+  if (businessUpdateError) {
     return NextResponse.json(
-      { ok: false, message: "Could not attach your account to the business." },
+      { ok: false, message: "Could not update the provisioned business." },
       { status: 500 }
     );
   }
 
-  // Keep the provisioned owner contact on the business in sync (same rule as
-  // accept_owner_claim). Never creates another business.
-  await service
-    .from("businesses")
-    .update({ owner_email: email })
-    .eq("id", claimRow.business_id);
-
   // 7) Success — session cookies ride on this response; the owner stays logged
   //    in (Supabase refresh-token cookies) until expiry/reauthentication.
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true, business_id: claimRow.business_id });
   for (const { name, value, options } of cookieWrites) {
     response.cookies.set(name, value, options);
   }
