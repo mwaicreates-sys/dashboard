@@ -7,8 +7,9 @@ import { EntryTab } from "./EntryTab";
 import { ActivityTab } from "./ActivityTab";
 import { ProfileTab } from "./ProfileTab";
 import { ContextIndicator } from "./ContextIndicator";
+import { RecurringSection } from "./RecurringSection";
 import { useDashboardData } from "@/lib/dashboardData";
-import { ChevronLeftIcon, ChevronRightIcon } from "./icons";
+import { ChevronLeftIcon, ChevronRightIcon, BellIcon } from "./icons";
 
 const TAB_LABELS: Record<TabId, string> = {
   dashboard: "Dashboard",
@@ -25,11 +26,14 @@ const TAB_LABELS: Record<TabId, string> = {
  */
 export function Shell() {
   const [tab, setTab] = useState<TabId>("dashboard");
-  const { selectedYear, setSelectedYear } = useDashboardData();
+  const [showReminder, setShowReminder] = useState(false);
+  const { selectedYear, setSelectedYear, upcomingRecurring } = useDashboardData();
 
   const changeYear = (delta: 1 | -1) => {
     setSelectedYear(selectedYear + delta);
   };
+
+  const upcomingCount = upcomingRecurring.length;
 
   return (
     <div className="flex min-h-screen flex-col bg-cream">
@@ -75,8 +79,22 @@ export function Shell() {
             )}
           </div>
 
-          {/* RIGHT — workspace + account controls */}
+          {/* RIGHT — dashboard reminder + workspace/account controls */}
           <div className="flex items-center gap-3">
+            {tab === "dashboard" && (
+              <button
+                type="button"
+                onClick={() => setShowReminder(true)}
+                aria-label={`${upcomingCount} upcoming scheduled ${
+                  upcomingCount === 1 ? "entry" : "entries"
+                }`}
+                className="indicator-trigger flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-medium text-secondary-text hover:bg-secondary-text/10 hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-95"
+              >
+                <BellIcon className="h-3.5 w-3.5" />
+                <span className="tabular-nums">{upcomingCount}</span>
+                <span className="hidden xs:inline">Upcoming</span>
+              </button>
+            )}
             <ContextIndicator />
           </div>
         </div>
@@ -94,6 +112,31 @@ export function Shell() {
           {tab === "profile" && <ProfileTab />}
         </div>
       </main>
+
+      {tab === "dashboard" && showReminder && (
+        <button
+          type="button"
+          onClick={() => setShowReminder(false)}
+          aria-label="Close upcoming"
+          className="fixed inset-0 z-[99] flex items-center justify-center bg-black/20 p-2 backdrop-blur-[1px]"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-2xl rounded-[28px] border border-border bg-surface pb-4 shadow-xl sm:my-8 sm:max-w-xl"
+          >
+            <button
+              type="button"
+              onClick={() => setShowReminder(false)}
+              aria-label="Close"
+              className="absolute top-2 right-2 rounded-full p-1 text-secondary-text hover:bg-card hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60"
+            >
+              ✕
+            </button>
+            <RecurringSection />
+          </div>
+        </button>
+      )}
+
       <BottomNav active={tab} onChange={setTab} />
     </div>
   );
