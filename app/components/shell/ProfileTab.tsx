@@ -187,12 +187,12 @@ export function ProfileTab() {
       .join("") || "?";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       <header className="mb-4 md:mb-5">
         <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
           Profile
         </p>
-        <h1 className="mt-1 text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
+        <h1 className="mt-1 text-3xl font-semibold leading-none text-primary-text md:text-4xl">
           {greeting
             ? `${greeting}${profile.name.trim() ? `, ${profile.name.trim()}` : ""}`
             : "Welcome"}
@@ -200,10 +200,10 @@ export function ProfileTab() {
         <p className="mt-1.5 text-xs text-secondary-text">Profile, preferences and appearance</p>
       </header>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <div className="w-full lg:w-[40%] lg:space-y-4">
-          <section className="rounded-2xl border border-border bg-surface p-4 md:p-5">
-            <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 lg:gap-4 lg:flex-row lg:items-start">
+        <div className="w-full space-y-3 lg:w-[40%] lg:space-y-4">
+          <section className="rounded-2xl border border-border bg-surface p-3.5 md:p-5">
+            <div className="flex items-center gap-3 md:gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue to-teal text-lg font-semibold text-white">
                 {initials}
               </div>
@@ -276,7 +276,7 @@ export function ProfileTab() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-surface p-4 md:p-5">
+          <section className="rounded-2xl border border-border bg-surface p-3.5 md:p-5">
             <h2 className="text-sm font-semibold text-primary-text">Account</h2>
             <p className="mt-0.5 text-[11px] text-muted-text">
               {activeBusiness
@@ -303,8 +303,8 @@ export function ProfileTab() {
           </section>
         </div>
 
-        <div className="w-full lg:w-[60%] lg:space-y-4">
-          <section className="rounded-2xl border border-border bg-surface p-4 md:p-5">
+        <div className="w-full space-y-3 lg:w-[60%] lg:space-y-4">
+          <section className="rounded-2xl border border-border bg-surface p-3.5 md:p-5">
             <h2 className="text-sm font-semibold text-primary-text">Preferences</h2>
             <p className="mt-0.5 text-[11px] text-muted-text">
               Set the display currency for all amounts.
@@ -352,7 +352,7 @@ export function ProfileTab() {
             </p>
           </section>
 
-          <section className="rounded-2xl border border-border bg-surface p-4 md:p-5">
+          <section className="rounded-2xl border border-border bg-surface p-3.5 md:p-5">
             <h2 className="text-sm font-semibold text-primary-text">Appearance</h2>
             <p className="mt-0.5 text-[11px] text-muted-text">
               Choose light, dark, or match your system.

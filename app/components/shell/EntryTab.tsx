@@ -196,10 +196,10 @@ export function EntryTab() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       <header className="mb-4 md:mb-5">
         <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">Entry</p>
-        <h1 className="mt-1 text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
+        <h1 className="mt-1 text-3xl font-semibold leading-none text-primary-text md:text-4xl">
           Record money
         </h1>
         <p className="mt-1.5 text-xs text-secondary-text">
@@ -207,7 +207,7 @@ export function EntryTab() {
         </p>
       </header>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div className="flex flex-col gap-3 lg:gap-4 lg:flex-row lg:items-start">
         {/* LEFT — Category cards */}
         <section className="w-full lg:w-[65%]">
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
@@ -219,7 +219,7 @@ export function EntryTab() {
               return (
                 <div
                   key={kind.id}
-                  className="group relative flex min-h-[148px] flex-col justify-between overflow-hidden rounded-2xl border border-border bg-surface p-4 transition-colors duration-200 hover:border-secondary-text/40 focus-within:border-blue/60"
+                  className="group relative flex min-h-[124px] flex-col justify-between overflow-hidden rounded-2xl border border-border bg-surface p-3.5 transition-colors duration-200 hover:border-secondary-text/40 focus-within:border-blue/60 sm:min-h-[148px] sm:p-4"
                 >
                   {meta.href ? (
                     <Link

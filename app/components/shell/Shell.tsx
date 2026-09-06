@@ -35,15 +35,15 @@ export function Shell() {
     <>
       {/* Three-zone header */}
       <div className="mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8">
-        <div className="flex min-h-[40px] items-center justify-between gap-4 py-3">
+        <div className="flex min-h-[36px] items-center justify-between gap-2 py-2.5 md:min-h-[40px] md:gap-4 md:py-3">
           {/* LEFT — tab identity + year navigation */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
                 {TAB_LABELS[tab]}
               </p>
               {tab === "dashboard" && (
-                <div className="mt-1 flex items-center gap-2">
+                <div className="mt-0.5 flex items-center gap-1.5 md:mt-1 md:gap-2">
                   <button
                     type="button"
                     onClick={() => changeYear(-1)}
@@ -86,7 +86,7 @@ export function Shell() {
       <main className="flex-1">
         <div
           key={tab}
-          className="tab-enter mx-auto w-full max-w-[1440px] px-4 pb-28 pt-3 md:px-6 md:pb-12 md:pt-4 lg:px-8"
+          className="tab-enter mx-auto w-full max-w-[1440px] px-3 pb-24 pt-2.5 sm:px-4 md:px-6 md:pb-12 md:pt-4 lg:px-8"
         >
           {tab === "dashboard" && <DashboardTab />}
           {tab === "entry" && <EntryTab />}

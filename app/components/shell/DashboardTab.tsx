@@ -21,16 +21,16 @@ export function DashboardTab() {
   const [weeksOpen, setWeeksOpen] = useState(false);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5 md:space-y-3">
       {/* Primary KPIs */}
       <section className="grid grid-cols-1 gap-3 sm:gap-3.5 md:grid-cols-[320px_1fr] lg:grid-cols-[360px_1fr]">
-        <div className="rounded-2xl border border-border bg-surface p-3.5 sm:p-4">
-          <p className="mb-2.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
+        <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+          <p className="mb-2 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
             Key metrics
           </p>
           <KPIGaugeGroup />
         </div>
-        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-surface p-3.5 sm:p-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2.5 rounded-2xl border border-border bg-surface p-3 sm:gap-3 sm:p-4 md:grid-cols-2">
           <NetWorthGrowth />
           <IncomeStreamStack />
         </div>

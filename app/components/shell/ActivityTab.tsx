@@ -116,13 +116,13 @@ export function ActivityTab() {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5 md:space-y-3">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">
             Activity
           </p>
-          <h1 className="mt-1 text-[2.1rem] font-semibold leading-none text-primary-text md:text-4xl">
+          <h1 className="mt-1 text-3xl font-semibold leading-none text-primary-text md:text-4xl">
             Day-by-day
           </h1>
           <p className="mt-1.5 text-xs text-secondary-text">
@@ -132,7 +132,7 @@ export function ActivityTab() {
       </header>
 
       {/* Primary Entry area — dominant on mobile */}
-      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-4 md:p-5">
+      <form onSubmit={submit} className="rounded-2xl border border-border bg-surface p-3.5 md:p-5">
         <label className="mb-2 block md:mb-3">
           <span className="text-[10px] font-medium uppercase tracking-wider text-muted-text">
             What did you do today?

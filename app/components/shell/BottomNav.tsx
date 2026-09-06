@@ -40,10 +40,10 @@ export function BottomNav({ active, onChange }: { active: TabId; onChange: (tab:
   return (
     <nav
       aria-label="Primary"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-[max(env(safe-area-inset-bottom),0.55rem)]"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-2 pb-[max(env(safe-area-inset-bottom),0.4rem)]"
     >
       <div
-        className={`pointer-events-auto flex items-center justify-around gap-1 rounded-full border border-border/60 bg-surface/85 px-1.5 py-1 shadow-[0_6px_18px_rgba(0,0,0,0.08)] backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 ease-out dark:border-white/10 dark:bg-[#16161a]/85 ${
+        className={`pointer-events-auto flex items-center justify-around gap-0.5 rounded-full border border-border/60 bg-surface/85 px-1 py-0.5 shadow-[0_6px_18px_rgba(0,0,0,0.08)] backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 ease-out dark:border-white/10 dark:bg-[#16161a]/85 ${
           hidden ? "translate-y-[150%] opacity-0" : "translate-y-0 opacity-100"
         }`}
       >
@@ -57,7 +57,7 @@ export function BottomNav({ active, onChange }: { active: TabId; onChange: (tab:
               onClick={() => onChange(tab.id)}
               aria-current={isActive ? "page" : undefined}
               aria-label={tab.description}
-              className={`group flex min-w-[60px] select-none flex-col items-center gap-[3px] rounded-xl px-2.5 pb-1 pt-[7px] outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.95] ${
+              className={`group flex min-w-[58px] select-none flex-col items-center gap-[2px] rounded-xl px-2 pb-1 pt-1.5 outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.95] ${
                 isActive ? "text-blue" : "text-secondary-text hover:text-primary-text"
               }`}
             >
