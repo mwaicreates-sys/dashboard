@@ -1,6 +1,6 @@
 -- ============================================================
--- DEMO SEED SCRIPT — Mwai & Co. Services
--- Idempotent: deletes and recreates the demo tenant on re-run.
+-- DEMO SEED SCRIPT — existing Demo Business only
+-- Idempotent: refreshes only rows owned by this seed.
 -- Run in Supabase SQL Editor (service_role required).
 -- ============================================================
 
@@ -10,40 +10,39 @@
 DO $$
 DECLARE
   existing_biz_id uuid;
-  admin_count integer;
 BEGIN
-  SELECT count(*) INTO admin_count FROM public.profiles WHERE is_platform_admin = true;
-  IF admin_count = 0 THEN
-    RAISE EXCEPTION 'No platform-admin user found. Cannot seed demo business.';
+  SELECT id INTO existing_biz_id
+  FROM public.businesses
+  WHERE slug IN ('demo-business', 'mwai-co-services')
+     OR name IN ('Demo Business', 'Mwai & Co. Services')
+  ORDER BY CASE
+    WHEN slug = 'demo-business' THEN 1
+    WHEN name = 'Demo Business' THEN 2
+    ELSE 3
+  END
+  LIMIT 1;
+  IF existing_biz_id IS NULL THEN
+    RAISE EXCEPTION 'Existing Demo Business not found; refusing to create a new business.';
   END IF;
-  RAISE NOTICE 'Platform admins found: %', admin_count;
-
-  SELECT id INTO existing_biz_id FROM public.businesses WHERE slug = 'mwai-co-services';
-  IF existing_biz_id IS NOT NULL THEN
-    DELETE FROM public.businesses WHERE id = existing_biz_id;
-    RAISE NOTICE 'Deleted existing demo business: %', existing_biz_id;
-  END IF;
+  RAISE NOTICE 'Refreshing existing demo business: %', existing_biz_id;
 END $$;
 
 -- ============================================================
--- PHASE 2: FIND PLATFORM ADMIN & CREATE BUSINESS
+-- PHASE 2: RESOLVE EXISTING BUSINESS
 -- ============================================================
-WITH admin_user AS (
-  SELECT id, email FROM public.profiles WHERE is_platform_admin = true LIMIT 1
-),
-new_business AS (
-  INSERT INTO public.businesses (name, slug, currency)
-  VALUES ('Mwai & Co. Services', 'mwai-co-services', 'KES')
-  RETURNING id
-)
-INSERT INTO public.business_members (business_id, user_id, role)
-SELECT nb.id, au.id, 'owner'
-FROM new_business nb, admin_user au
-RETURNING business_id, user_id, role;
-
 -- Store business ID for subsequent inserts
 CREATE TEMP TABLE demo_biz (id uuid PRIMARY KEY);
-INSERT INTO demo_biz SELECT id FROM public.businesses WHERE slug = 'mwai-co-services';
+INSERT INTO demo_biz
+SELECT id
+FROM public.businesses
+WHERE slug IN ('demo-business', 'mwai-co-services')
+   OR name IN ('Demo Business', 'Mwai & Co. Services')
+ORDER BY CASE
+  WHEN slug = 'demo-business' THEN 1
+  WHEN name = 'Demo Business' THEN 2
+  ELSE 3
+END
+LIMIT 1;
 
 -- ============================================================
 -- PHASE 3: CATEGORIES

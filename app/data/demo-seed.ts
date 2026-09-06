@@ -74,6 +74,7 @@ export const demoAccounts: Account[] = [
   { id: "da2", name: "Equity Bank", type: "checking", openingBalance: 320000, currentBalance: 0, currency: "KES", institution: "Equity Bank", active: true },
   { id: "da3", name: "Cash", type: "checking", openingBalance: 15000, currentBalance: 0, currency: "KES", institution: "", active: true },
   { id: "da4", name: "Business Savings", type: "savings", openingBalance: 80000, currentBalance: 0, currency: "KES", institution: "Equity Bank", active: true },
+  { id: "da5", name: "Reserve Fund", type: "savings", openingBalance: 60000, currentBalance: 0, currency: "KES", institution: "Co-operative Bank", active: true },
 ];
 
 // ============================================================
@@ -181,17 +182,9 @@ for (const month of MONTHS_2026) {
   pushTx(`${month}-${d(12)}`, "expense", BASE.office, "dc18", "da3", "Office Supplies", { notes: "Paper, toner, etc." });
   pushTx(`${month}-${d(22)}`, "expense", BASE.misc, "dc20", "da1", "Miscellaneous", { notes: "Unexpected small costs" });
 
-  // --- Debt payments (transfers) ---
-  pushTx(`${month}-${d(28)}`, "transfer", BASE.loan, "dc21", "da2", "Business Loan Repayment", { toAccountId: "da2", notes: "KCB loan" });
-  pushTx(`${month}-${d(15)}`, "transfer", BASE.supplierCredit, "dc22", "da2", "Supplier Credit Payment", { toAccountId: "da2", notes: "Samsung distributor" });
-
   // --- Savings transfers ---
   pushTx(`${month}-${d(26)}`, "transfer", BASE.emergency, "dc5", "da2", "Emergency Fund Transfer", { toAccountId: "da4", notes: "Monthly savings" });
   pushTx(`${month}-${d(27)}`, "transfer", BASE.businessSavings, "dc6", "da2", "Business Savings Transfer", { toAccountId: "da4", notes: "Capital reserve" });
-
-  // --- Investment transfers ---
-  pushTx(`${month}-${d(30)}`, "transfer", BASE.equipment, "dc7", "da2", "Equipment Upgrade Fund", { toAccountId: "da4", notes: "New display units" });
-  pushTx(`${month}-${d(30)}`, "transfer", BASE.expansion, "dc8", "da2", "Expansion Fund", { toAccountId: "da4", notes: "New branch plan" });
 }
 
 // One-off transactions for realism
@@ -207,15 +200,10 @@ const ONE_OFFS: Array<{
 }> = [
   { date: "2026-01-15", type: "expense", amount: 85000, categoryId: "dc14", accountId: "da2", description: "New Year Stock Restock", notes: "iPhone 12 bulk order" },
   { date: "2026-02-10", type: "income", amount: 150000, categoryId: "dc1", accountId: "da2", description: "Bulk Corporate Order", notes: "Safaricom accessories order" },
-  { date: "2026-03-05", type: "expense", amount: 45000, categoryId: "dc15", accountId: "da1", description: "Billboard Advertising", notes: "Nairobi CBD billboard" },
   { date: "2026-04-20", type: "income", amount: 200000, categoryId: "dc1", accountId: "da2", description: "Laptop Sales Campaign", notes: "End-of-month promo" },
-  { date: "2026-05-08", type: "expense", amount: 32000, categoryId: "dc16", accountId: "da1", description: "Delivery Van Fuel", notes: "Long-haul deliveries" },
   { date: "2026-06-15", type: "income", amount: 180000, categoryId: "dc2", accountId: "da2", description: "Accessories Wholesale", notes: "Bulk order from distributor" },
-  { date: "2026-07-01", type: "expense", amount: 25000, categoryId: "dc17", accountId: "da2", description: "Staff Bonus — Q2", notes: "Performance bonus" },
   { date: "2026-08-12", type: "income", amount: 300000, categoryId: "dc1", accountId: "da2", description: "Back-to-School Sales", notes: "Laptops and tablets" },
-  { date: "2026-09-05", type: "expense", amount: 150000, categoryId: "dc14", accountId: "da2", description: "Stock Purchase — Q4", notes: "Holiday inventory" },
   { date: "2026-10-10", type: "income", amount: 220000, categoryId: "dc3", accountId: "da1", description: "Corporate Repair Contract", notes: "Safaricom device repair" },
-  { date: "2026-11-20", type: "expense", amount: 60000, categoryId: "dc15", accountId: "da1", description: "Black Friday Marketing", notes: "Social media + SMS" },
   { date: "2026-12-05", type: "income", amount: 450000, categoryId: "dc1", accountId: "da2", description: "Holiday Season Sales", notes: "December peak" },
   { date: "2026-12-20", type: "expense", amount: 85000, categoryId: "dc14", accountId: "da2", description: "Year-End Stock Clearance", notes: "Discounted clearance stock" },
 ];
@@ -234,6 +222,21 @@ for (const off of ONE_OFFS) {
     toAccountId: off.toAccountId,
     currency: "KES",
   });
+}
+
+// Account balances are a derived result of the seeded ledger, not placeholder
+// presentation values. Transfers affect both their source and destination.
+for (const account of demoAccounts) {
+  let balance = account.openingBalance;
+  for (const transaction of demoTransactions) {
+    if (transaction.accountId === account.id) {
+      balance += transaction.type === "income" ? transaction.amount : -transaction.amount;
+    }
+    if (transaction.type === "transfer" && transaction.toAccountId === account.id) {
+      balance += transaction.amount;
+    }
+  }
+  account.currentBalance = balance;
 }
 
 // ============================================================
@@ -303,7 +306,25 @@ export const demoGoals: Goal[] = [
     targetAmount: 5000000,
     currentAmount: totalIncome,
     targetDate: "2026-12-31",
-    status: "at-risk",
+    status: "on-track",
+    currency: "KES",
+  },
+  {
+    id: "dg4",
+    name: "New Point-of-Sale System",
+    targetAmount: 180000,
+    currentAmount: 54000,
+    targetDate: "2026-10-31",
+    status: "active",
+    currency: "KES",
+  },
+  {
+    id: "dg5",
+    name: "Delivery Van Deposit",
+    targetAmount: 500000,
+    currentAmount: 450000,
+    targetDate: "2026-09-30",
+    status: "on-track",
     currency: "KES",
   },
 ];
@@ -319,11 +340,11 @@ export const demoPlannedTransactions: PlannedTransaction[] = [
   { id: "dp5", date: "2026-07-10", accountId: "da2", categoryId: "dc11", description: "Internet Bill", amount: 8500, type: "expense", status: "pending", recurrence: "monthly" },
   { id: "dp6", date: "2026-07-12", accountId: "da2", categoryId: "dc17", description: "Staff Salaries", amount: 380000, type: "expense", status: "pending", recurrence: "monthly" },
   { id: "dp7", date: "2026-07-15", accountId: "da2", categoryId: "dc15", description: "Marketing Spend", amount: 55000, type: "expense", status: "pending", recurrence: "monthly" },
-  { id: "dp8", date: "2026-07-15", accountId: "da2", categoryId: "dc21", description: "Business Loan Repayment", amount: 45000, type: "transfer", status: "pending", recurrence: "monthly", toAccountId: "da2" },
+  { id: "dp8", date: "2026-07-15", accountId: "da2", categoryId: "dc21", description: "Business Loan Repayment", amount: 45000, type: "expense", status: "pending", recurrence: "monthly" },
   { id: "dp9", date: "2026-07-28", accountId: "da2", categoryId: "dc16", description: "Transport Costs", amount: 28000, type: "expense", status: "pending", recurrence: "monthly" },
   { id: "dp10", date: "2026-08-01", accountId: "da2", categoryId: "dc13", description: "Software Renewal", amount: 6500, type: "expense", status: "pending", recurrence: "yearly" },
   { id: "dp11", date: "2026-09-01", accountId: "da2", categoryId: "dc12", description: "Insurance Renewal", amount: 12000, type: "expense", status: "pending", recurrence: "yearly" },
-  { id: "dp12", date: "2026-12-01", accountId: "da2", categoryId: "dc22", description: "Supplier Payment", amount: 18000, type: "transfer", status: "pending", recurrence: "monthly", toAccountId: "da2" },
+  { id: "dp12", date: "2026-12-01", accountId: "da2", categoryId: "dc22", description: "Supplier Payment", amount: 18000, type: "expense", status: "pending", recurrence: "monthly" },
 ];
 
 // ============================================================

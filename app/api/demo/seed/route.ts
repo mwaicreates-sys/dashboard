@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServerClient, getServerMemberships } from "@/lib/serverAuth";
-import type { BusinessInfo } from "@/lib/cloudSync";
+import { getSupabaseServerClient, getServerIsPlatformAdmin, getServerMemberships } from "@/lib/serverAuth";
 import {
   demoCategories,
   demoAccounts,
@@ -17,18 +16,8 @@ import {
 // POST /api/demo/seed
 // Populates an EXISTING business with comprehensive demo data.
 //
-// Uses ONLY the authenticated session to resolve the target business.
-// Does NOT create a new business, profile, or membership.
-//
-// Behavior:
-//   1. Get authenticated user via auth.getUser()
-//   2. Get user's business memberships via getServerMemberships()
-//   3. If exactly 1 membership → seed that business
-//   4. If multiple memberships → require explicit businessId in body
-//   5. If 0 memberships → return error
-//
-// Request body (optional):
-//   { "businessId": "uuid" }  // required only when user has multiple businesses
+// Seeds only the existing Demo Business. It never creates a business,
+// profile, membership, or platform-admin-owned records.
 // ============================================================
 
 export async function POST(request: Request) {
@@ -46,17 +35,7 @@ export async function POST(request: Request) {
 
     const authUserId = user.user.id;
 
-    // 2. Get user's business memberships using existing application logic
-    const memberships = await getServerMemberships(authUserId);
-
-    if (!memberships || memberships.length === 0) {
-      return NextResponse.json(
-        { error: "No business memberships found. Join or create a business first." },
-        { status: 404 }
-      );
-    }
-
-    // 3. Parse request body for optional businessId
+    // 2. Parse request body. Only the existing Demo Business is eligible.
     let body: { businessId?: string } = {};
     try {
       body = await request.json();
@@ -64,70 +43,84 @@ export async function POST(request: Request) {
       // No body provided
     }
 
-    // 4. Resolve target business
-    let targetBusiness: BusinessInfo | null = null;
+    // 3. Resolve the existing demo tenant by stable slug/name. Never create a
+    // business or fall back to an arbitrary membership.
+    let { data: business, error: businessError } = await supabase
+      .from("businesses")
+      .select("id, name, slug, currency")
+      .eq("slug", "demo-business")
+      .maybeSingle();
+    if (!business && !businessError) {
+      ({ data: business, error: businessError } = await supabase
+        .from("businesses")
+        .select("id, name, slug, currency")
+        .eq("slug", "mwai-co-services")
+        .maybeSingle());
+    }
+    if (!business && !businessError) {
+      ({ data: business, error: businessError } = await supabase
+        .from("businesses")
+        .select("id, name, slug, currency")
+        .eq("name", "Demo Business")
+        .maybeSingle());
+    }
 
-    if (memberships.length === 1) {
-      // Exactly one membership → use it automatically
-      targetBusiness = memberships[0];
-    } else if (memberships.length > 1) {
-      // Multiple memberships → require explicit businessId
-      if (!body.businessId || typeof body.businessId !== "string") {
-        return NextResponse.json(
-          {
-            error: "Multiple businesses found. Specify which business to seed.",
-            businesses: memberships.map((m) => ({
-              id: m.id,
-              name: m.name,
-              role: m.role,
-            })),
-          },
-          { status: 400 }
-        );
-      }
+    if (businessError || !business) {
+      return NextResponse.json({ error: "Existing Demo Business was not found." }, { status: 404 });
+    }
 
-      // Find the specified business
-      targetBusiness = memberships.find((m) => m.id === body.businessId) || null;
-
-      if (!targetBusiness) {
-        return NextResponse.json(
-          {
-            error: "Business not found or you don't have access to it.",
-            availableBusinesses: memberships.map((m) => ({
-              id: m.id,
-              name: m.name,
-              role: m.role,
-            })),
-          },
-          { status: 404 }
-        );
+    const businessId = business.id;
+    const businessName = business.name;
+    const isPlatformAdmin = await getServerIsPlatformAdmin();
+    if (!isPlatformAdmin) {
+      const memberships = await getServerMemberships(authUserId);
+      if (!memberships?.some((membership) => membership.id === businessId)) {
+        return NextResponse.json({ error: "You are not authorized to seed the Demo Business." }, { status: 403 });
       }
     }
 
-    const businessId = targetBusiness!.id;
-    const businessName = targetBusiness!.name;
+    // 4. Verify the optional id cannot redirect the seed to another tenant.
+    if (body.businessId && body.businessId !== businessId) {
+      return NextResponse.json({ error: "Only the existing Demo Business may be seeded." }, { status: 400 });
+    }
+
+    const { data: businessMembers } = await supabase
+      .from("business_members")
+      .select("user_id")
+      .eq("business_id", businessId)
+      .order("created_at");
+    const memberUserIds = (businessMembers ?? [])
+      .map((member) => member.user_id)
+      .filter((userId): userId is string => typeof userId === "string");
 
     // 5. Verify the business exists
-    const { data: business, error: businessError } = await supabase
+    const { data: verifiedBusiness, error: verifiedBusinessError } = await supabase
       .from("businesses")
-      .select("id, name, currency")
+      .select("id, name, slug, currency")
       .eq("id", businessId)
       .maybeSingle();
 
-    if (businessError || !business) {
+    if (verifiedBusinessError || !verifiedBusiness) {
       return NextResponse.json({ error: "Business not found." }, { status: 404 });
     }
 
-    // 6. Clear existing data for this business (safe reset)
-    await supabase.from("transactions").delete().eq("business_id", businessId);
-    await supabase.from("planned_transactions").delete().eq("business_id", businessId);
-    await supabase.from("activities").delete().eq("business_id", businessId);
-    await supabase.from("notifications").delete().eq("business_id", businessId);
-    await supabase.from("budgets").delete().eq("business_id", businessId);
-    await supabase.from("goals").delete().eq("business_id", businessId);
-    await supabase.from("accounts").delete().eq("business_id", businessId);
-    await supabase.from("categories").delete().eq("business_id", businessId);
-    await supabase.from("app_settings").delete().eq("business_id", businessId);
+    // 6. Clear only rows owned by this deterministic seed. Existing business
+    // members and unrelated tenant records remain untouched.
+    const deleteResults = await Promise.all([
+      supabase.from("transactions").delete().eq("business_id", businessId).in("local_id", demoTransactions.map((t) => t.id)),
+      supabase.from("planned_transactions").delete().eq("business_id", businessId).in("local_id", demoPlannedTransactions.map((p) => p.id)),
+      supabase.from("activities").delete().eq("business_id", businessId).in("local_id", demoActivities.map((a) => a.id)),
+      supabase.from("notifications").delete().eq("business_id", businessId).in("local_id", demoNotifications.map((n) => n.id)),
+      supabase.from("budgets").delete().eq("business_id", businessId).in("local_id", demoBudgets.map((b) => b.id)),
+      supabase.from("goals").delete().eq("business_id", businessId).in("local_id", demoGoals.map((g) => g.id)),
+      supabase.from("accounts").delete().eq("business_id", businessId).in("local_id", demoAccounts.map((a) => a.id)),
+      supabase.from("categories").delete().eq("business_id", businessId).in("local_id", demoCategories.map((c) => c.id)),
+      supabase.from("app_settings").delete().eq("business_id", businessId).in("key", ["todos", "selectedYear"]),
+    ]);
+    const deleteError = deleteResults.find((result) => result.error)?.error;
+    if (deleteError) {
+      return NextResponse.json({ error: `Demo cleanup: ${deleteError.message}` }, { status: 500 });
+    }
 
     // 7. Seed categories
     const catRows = demoCategories.map((c) => ({
@@ -220,9 +213,10 @@ export async function POST(request: Request) {
     if (plannedError) return NextResponse.json({ error: `Planned: ${plannedError.message}` }, { status: 500 });
 
     // 13. Seed activities
-    const activityRows = demoActivities.map((a) => ({
+    const activityRows = demoActivities.map((a, index) => ({
       business_id: businessId,
       local_id: a.id,
+      actor_user_id: memberUserIds.length > 0 ? memberUserIds[index % memberUserIds.length] : null,
       title: a.title,
       date: a.date,
       notes: a.notes || null,
@@ -263,6 +257,13 @@ export async function POST(request: Request) {
     });
     if (yearError) return NextResponse.json({ error: `Year: ${yearError.message}` }, { status: 500 });
 
+    const incomeTotal = demoTransactions
+      .filter((transaction) => transaction.type === "income")
+      .reduce((total, transaction) => total + transaction.amount, 0);
+    const expenseTotal = demoTransactions
+      .filter((transaction) => transaction.type === "expense")
+      .reduce((total, transaction) => total + transaction.amount, 0);
+
     // 17. Return success summary
     return NextResponse.json({
       success: true,
@@ -279,6 +280,22 @@ export async function POST(request: Request) {
         activities: demoActivities.length,
         notifications: demoNotifications.length,
         todos: demoTodos.length,
+        members: memberUserIds.length,
+      },
+      dateRange: {
+        start: demoTransactions.reduce((min, transaction) => transaction.date < min ? transaction.date : min, demoTransactions[0]?.date ?? ""),
+        end: demoTransactions.reduce((max, transaction) => transaction.date > max ? transaction.date : max, demoTransactions[0]?.date ?? ""),
+      },
+      totals: {
+        income: incomeTotal,
+        expenses: expenseTotal,
+        netBeforeTransfers: incomeTotal - expenseTotal,
+        accountBalances: demoAccounts.map((account) => ({
+          id: account.id,
+          name: account.name,
+          openingBalance: account.openingBalance,
+          currentBalance: account.currentBalance,
+        })),
       },
       message: `Demo data seeded successfully into "${businessName}". All records belong to this business.`,
     });
