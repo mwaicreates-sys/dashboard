@@ -46,7 +46,7 @@ export function DashboardTab() {
         <InformationGrid />
       </div>
 
-      <aside className="min-w-0 space-y-3.5 lg:pt-0">
+      <aside className="min-w-0 space-y-3.5 lg:sticky lg:top-4 lg:self-start">
         <RecurringSection />
         <ExportReports />
       </aside>

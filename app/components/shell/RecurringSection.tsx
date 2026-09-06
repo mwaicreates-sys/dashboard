@@ -60,7 +60,7 @@ export function RecurringSection() {
           Nothing scheduled in the next 30 days. Add planned entries from the Entry tab.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="max-h-[360px] space-y-2 overflow-y-auto overscroll-contain pr-1">
           {upcoming.map((p) => (
             <li
               key={p.id}

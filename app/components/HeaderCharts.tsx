@@ -83,7 +83,7 @@ export function NetWorthGrowth() {
         <h3 className="font-inter text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
           Net Worth Growth
         </h3>
-        <div className="mt-1.5 flex min-h-[150px] flex-1 items-center justify-center rounded border border-dashed border-border bg-card/30 text-[11px] sm:text-[13px] text-secondary-text">
+        <div className="mt-1.5 flex min-h-[120px] flex-1 items-center justify-center rounded border border-dashed border-border bg-card/30 text-[11px] sm:text-[13px] text-secondary-text">
           No net worth data yet
         </div>
       </Link>
@@ -102,7 +102,7 @@ export function NetWorthGrowth() {
       <h3 className="font-inter text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
         Net Worth Growth
       </h3>
-      <ResponsiveContainer className="min-w-0 flex-1 min-h-[150px]" width="100%">
+      <ResponsiveContainer className="min-w-0 flex-1 min-h-[120px]" width="100%">
         <AreaChart data={netWorthGrowth}>
           <defs>
             <linearGradient id="netWorthGradient" x1="0" y1="0" x2="0" y2="1">
@@ -197,7 +197,7 @@ export function IncomeStreamStack() {
         <h3 className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
           Income Stream Stack
         </h3>
-        <div className="mt-1.5 flex min-h-[150px] flex-1 items-center justify-center rounded border border-dashed border-border bg-card/30 text-[11px] sm:text-[13px] text-secondary-text">
+        <div className="mt-1.5 flex min-h-[120px] flex-1 items-center justify-center rounded border border-dashed border-border bg-card/30 text-[11px] sm:text-[13px] text-secondary-text">
           No income data yet
         </div>
       </Link>
@@ -213,7 +213,7 @@ export function IncomeStreamStack() {
       <h3 className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
         Income Stream Stack
       </h3>
-      <ResponsiveContainer className="min-w-0 flex-1 min-h-[150px]" width="100%">
+      <ResponsiveContainer className="min-w-0 flex-1 min-h-[120px]" width="100%">
         <BarChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
           <XAxis
@@ -246,7 +246,7 @@ export function IncomeStreamStack() {
           ))}
         </BarChart>
       </ResponsiveContainer>
-      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+      <div className="mt-1 flex flex-wrap justify-center gap-x-2.5 gap-y-0.5">
         {categorySeries.map((item) => (
           <div key={item.key} className="flex items-center gap-1">
             <div

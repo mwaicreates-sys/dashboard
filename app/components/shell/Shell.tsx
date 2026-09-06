@@ -86,7 +86,7 @@ export function Shell() {
       <main className="flex-1 w-full min-h-0">
         <div
           key={tab}
-          className="tab-enter mx-auto w-full max-w-[1440px] px-3 pb-24 pt-2.5 sm:px-4 md:px-6 md:pb-12 md:pt-4 lg:px-8"
+          className="tab-enter mx-auto w-full max-w-[1440px] px-3 pb-28 pt-2.5 sm:px-4 md:px-6 md:pb-20 md:pt-4 lg:px-8"
         >
           {tab === "dashboard" && <DashboardTab />}
           {tab === "entry" && <EntryTab />}
