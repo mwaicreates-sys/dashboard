@@ -34,6 +34,7 @@ export interface BusinessMeta extends BusinessRow {
   ownerName: string | null;
   active: boolean;
   accessCode: string | null;
+  accessCodeStatus: "pending" | "used" | "revoked" | null;
 }
 
 export interface ActivityEvent {
@@ -134,7 +135,7 @@ export async function fetchAdminBusinesses(): Promise<BusinessMeta[] | null> {
   if (!client) return null;
   try {
     const [b, m, activeIds] = await Promise.all([
-      client.from("businesses").select("*").order("name"),
+      client.from("businesses").select("id,name,slug,currency,created_at,owner_name,owner_email").order("name"),
       client.from("business_members").select("business_id,user_id,role,created_at"),
       recentActiveIds(client, new Date(Date.now() - 30 * DAY).toISOString()),
     ]);
@@ -159,6 +160,7 @@ export async function fetchAdminBusinesses(): Promise<BusinessMeta[] | null> {
         ownerName,
         active: activeIds.has(row.id),
         accessCode: row.activation_code ?? null,
+        accessCodeStatus: null,
       };
     });
   } catch {
@@ -230,10 +232,17 @@ export async function fetchAdminBusinessDetail(id: string): Promise<BusinessDeta
   const client = getSupabaseBrowserClient();
   if (!client) return null;
   try {
-    const [biz, members, activities] = await Promise.all([
-      client.from("businesses").select("*").eq("id", id).maybeSingle(),
+    const [biz, members, activities, claim] = await Promise.all([
+      client.from("businesses").select("id,name,slug,currency,created_at,owner_name,owner_email").eq("id", id).maybeSingle(),
       client.from("business_members").select("business_id,user_id,role,created_at").eq("business_id", id),
       client.from("activities").select("id,local_id,title,date,status,notes,due_date,created_at").eq("business_id", id).order("date", { ascending: false }).limit(50),
+      client
+        .from("business_owner_claims")
+        .select("status,created_at")
+        .eq("business_id", id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
     if (biz.error || !biz.data) return { business: null, members: [], activities: [] };
 
@@ -259,6 +268,7 @@ export async function fetchAdminBusinessDetail(id: string): Promise<BusinessDeta
       ownerName,
       active: activeIds.has(id),
       accessCode: base.activation_code ?? null,
+      accessCodeStatus: (claim.data?.status as BusinessMeta["accessCodeStatus"]) ?? null,
     };
 
     return {
