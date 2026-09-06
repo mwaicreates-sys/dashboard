@@ -1,55 +1,112 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { KPIGaugeGroup } from "@/components/CircularKPI";
+import { useMemo } from "react";
+import { CircularKPI } from "@/components/CircularKPI";
 import { NetWorthGrowth, IncomeStreamStack } from "@/components/HeaderCharts";
-import { VisualizationGrid } from "@/components/VisualizationGrid";
-import { InformationGrid } from "@/components/InformationGrid";
-import { MonthlyPerformance } from "./MonthlyPerformance";
+import { useDashboardData } from "@/lib/dashboardData";
+import { formatMoneyFull, shortDayLabel } from "@/lib/dates";
 import { RecurringSection } from "./RecurringSection";
-import { ExportReports } from "./ExportReports";
 
-/**
- * Dashboard — financial analysis for one calendar year.
- * Hierarchy: KPIs → Charts → Monthly income → Analysis →
- * (secondary) Upcoming & recurring → Export & reports.
- *
- * Year context and tab identity are rendered by the shell header.
- */
-export function DashboardTab() {
-  const router = useRouter();
+function RecordedSection() {
+  const { displayTransactions, categories, accounts } = useDashboardData();
+
+  const recent = useMemo(
+    () =>
+      [...displayTransactions]
+        .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+        .slice(0, 6),
+    [displayTransactions]
+  );
+
+  const categoryName = (id?: string) => categories.find((c) => c.id === id)?.name ?? "General";
+  const accountName = (id?: string) => accounts.find((a) => a.id === id)?.name;
 
   return (
-    <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="min-w-0 space-y-2.5 md:space-y-3">
-        {/* Primary KPIs */}
-        <section className="grid grid-cols-1 gap-3 sm:gap-3.5 md:grid-cols-[320px_1fr] lg:grid-cols-[360px_1fr]">
-          <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
-            <p className="mb-2 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
-              Key metrics
-            </p>
-            <KPIGaugeGroup />
-          </div>
-          <div className="grid grid-cols-1 gap-2.5 rounded-2xl border border-border bg-surface p-3 sm:gap-3 sm:p-4 md:grid-cols-2">
-            <NetWorthGrowth />
-            <IncomeStreamStack />
-          </div>
-        </section>
-
-        {/* Four primary charts */}
-        <VisualizationGrid />
-
-        {/* Monthly income & spending — January through December */}
-        <MonthlyPerformance onOpenWeeks={() => router.push("/weeks")} />
-
-        {/* Primary financial analysis */}
-        <InformationGrid />
+    <section className="rounded-2xl border border-border bg-surface p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-primary-text">Recorded</h2>
+          <p className="text-[11px] text-muted-text">Latest transactions</p>
+        </div>
+        <span className="rounded-full bg-card px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-secondary-text">
+          {recent.length} entries
+        </span>
       </div>
 
-      <aside className="min-w-0 space-y-3.5 lg:pt-0">
+      {recent.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-4 text-center text-[11px] text-muted-text">
+          No recorded transactions yet.
+        </p>
+      ) : (
+        <ul className="space-y-2.5">
+          {recent.map((tx) => (
+            <li
+              key={tx.id}
+              className="flex items-start gap-3 rounded-xl border border-border bg-card/40 px-3 py-2.5"
+            >
+              <div className="flex h-8 w-11 shrink-0 flex-col items-center justify-center rounded-lg bg-surface text-center leading-none">
+                <span className="text-[9px] uppercase tracking-wide text-muted-text">
+                  {shortDayLabel(tx.date).split(",")[0]}
+                </span>
+                <span className="text-[10px] font-semibold tabular-nums text-primary-text">
+                  {tx.date.slice(8)}
+                </span>
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] font-medium text-primary-text">{tx.description}</p>
+                <p className="text-[10px] text-muted-text">
+                  {categoryName(tx.categoryId)}
+                  {accountName(tx.accountId) ? ` · ${accountName(tx.accountId)}` : ""}
+                </p>
+              </div>
+
+              <span
+                className={`shrink-0 text-right text-[12px] font-semibold tabular-nums ${
+                  tx.type === "income" ? "text-green" : tx.type === "expense" ? "text-orange" : "text-teal"
+                }`}
+              >
+                {tx.type === "income" ? "+" : tx.type === "expense" ? "−" : ""}
+                {formatMoneyFull(tx.amount)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export function DashboardTab() {
+  const { kpis } = useDashboardData();
+
+  return (
+    <div className="space-y-3 md:space-y-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {kpis.map((kpi) => (
+          <div key={kpi.label} className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+            <p className="mb-2 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
+              {kpi.label}
+            </p>
+            <div className="flex items-center justify-center">
+              <CircularKPI {...kpi} />
+            </div>
+          </div>
+        ))}
+
+        <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+          <NetWorthGrowth />
+        </div>
+
+        <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+          <IncomeStreamStack />
+        </div>
+      </section>
+
+      <section className="grid gap-3 lg:grid-cols-2">
         <RecurringSection />
-        <ExportReports />
-      </aside>
+        <RecordedSection />
+      </section>
     </div>
   );
 }
