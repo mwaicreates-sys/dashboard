@@ -43,8 +43,10 @@ export async function POST(request: Request) {
       // No body provided
     }
 
-    // 3. Resolve the existing demo tenant by stable slug/name. Never create a
-    // business or fall back to an arbitrary membership.
+    const isPlatformAdmin = await getServerIsPlatformAdmin();
+
+    // 3. Resolve the dedicated demo tenant by stable identifier. Geraldmwaike
+    // and Mwai & Co are intentionally never candidates for this seed.
     let { data: business, error: businessError } = await supabase
       .from("businesses")
       .select("id, name, slug, currency")
@@ -54,24 +56,45 @@ export async function POST(request: Request) {
       ({ data: business, error: businessError } = await supabase
         .from("businesses")
         .select("id, name, slug, currency")
-        .eq("slug", "mwai-co-services")
-        .maybeSingle());
-    }
-    if (!business && !businessError) {
-      ({ data: business, error: businessError } = await supabase
-        .from("businesses")
-        .select("id, name, slug, currency")
         .eq("name", "Demo Business")
         .maybeSingle());
     }
 
-    if (businessError || !business) {
-      return NextResponse.json({ error: "Existing Demo Business was not found." }, { status: 404 });
+    if (businessError) {
+      return NextResponse.json({ error: `Could not resolve Demo Business: ${businessError.message}` }, { status: 500 });
+    }
+
+    if (!business) {
+      if (!isPlatformAdmin) {
+        return NextResponse.json({ error: "Demo Business was not found." }, { status: 404 });
+      }
+
+      const { data: createdBusinessId, error: createError } = await supabase.rpc("admin_create_business", {
+        p_currency: "KES",
+        p_name: "Demo Business",
+        p_owner_name: null,
+        p_owner_email: null,
+      });
+      if (createError || typeof createdBusinessId !== "string") {
+        return NextResponse.json(
+          { error: `Demo Business does not exist and could not be provisioned: ${createError?.message ?? "invalid business id"}` },
+          { status: 500 },
+        );
+      }
+
+      const { data: createdBusiness, error: createdBusinessError } = await supabase
+        .from("businesses")
+        .select("id, name, slug, currency")
+        .eq("id", createdBusinessId)
+        .maybeSingle();
+      if (createdBusinessError || !createdBusiness) {
+        return NextResponse.json({ error: "Demo Business was created but could not be reloaded." }, { status: 500 });
+      }
+      business = createdBusiness;
     }
 
     const businessId = business.id;
     const businessName = business.name;
-    const isPlatformAdmin = await getServerIsPlatformAdmin();
     if (!isPlatformAdmin) {
       const memberships = await getServerMemberships(authUserId);
       if (!memberships?.some((membership) => membership.id === businessId)) {

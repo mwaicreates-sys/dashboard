@@ -13,18 +13,21 @@ DECLARE
 BEGIN
   SELECT id INTO existing_biz_id
   FROM public.businesses
-  WHERE slug IN ('demo-business', 'mwai-co-services')
-     OR name IN ('Demo Business', 'Mwai & Co. Services')
-  ORDER BY CASE
-    WHEN slug = 'demo-business' THEN 1
-    WHEN name = 'Demo Business' THEN 2
-    ELSE 3
-  END
+  WHERE slug = 'demo-business'
+     OR name = 'Demo Business'
+  ORDER BY CASE WHEN slug = 'demo-business' THEN 1 ELSE 2 END
   LIMIT 1;
   IF existing_biz_id IS NULL THEN
-    RAISE EXCEPTION 'Existing Demo Business not found; refusing to create a new business.';
+    SELECT public.admin_create_business(
+      'KES',
+      'Demo Business',
+      NULL,
+      NULL
+    ) INTO existing_biz_id;
+    RAISE NOTICE 'Created dedicated Demo Business: %', existing_biz_id;
+  ELSE
+    RAISE NOTICE 'Refreshing existing Demo Business: %', existing_biz_id;
   END IF;
-  RAISE NOTICE 'Refreshing existing demo business: %', existing_biz_id;
 END $$;
 
 -- ============================================================
@@ -35,14 +38,22 @@ CREATE TEMP TABLE demo_biz (id uuid PRIMARY KEY);
 INSERT INTO demo_biz
 SELECT id
 FROM public.businesses
-WHERE slug IN ('demo-business', 'mwai-co-services')
-   OR name IN ('Demo Business', 'Mwai & Co. Services')
-ORDER BY CASE
-  WHEN slug = 'demo-business' THEN 1
-  WHEN name = 'Demo Business' THEN 2
-  ELSE 3
-END
+WHERE slug = 'demo-business'
+   OR name = 'Demo Business'
+ORDER BY CASE WHEN slug = 'demo-business' THEN 1 ELSE 2 END
 LIMIT 1;
+
+-- This tenant is dedicated to the demo, so its business-owned dataset can be
+-- refreshed without touching members, auth identities, or other tenants.
+DELETE FROM public.transactions WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.planned_transactions WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.activities WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.notifications WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.budgets WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.goals WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.accounts WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.categories WHERE business_id IN (SELECT id FROM demo_biz);
+DELETE FROM public.app_settings WHERE business_id IN (SELECT id FROM demo_biz);
 
 -- ============================================================
 -- PHASE 3: CATEGORIES
