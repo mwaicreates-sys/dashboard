@@ -132,7 +132,7 @@ export function WorkspaceSelector() {
             No business access
           </p>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-text">
-            Your account hasn't been assigned to a business yet. Please contact your platform administrator.
+            Your account has not been assigned to a business yet. Please contact your platform administrator.
           </p>
           <button
             type="button"

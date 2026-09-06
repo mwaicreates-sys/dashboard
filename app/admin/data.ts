@@ -119,8 +119,7 @@ async function claimedOwnerMap(
   businesses: BusinessRow[]
 ): Promise<Map<string, { email: string | null; name: string | null }>> {
   const map = new Map<string, { email: string | null; name: string | null }>();
-  const bizIds = businesses.map((b) => b.id).filter(Boolean) as string[];
-  
+
   for (const biz of businesses) {
     if (biz.owner_name && biz.owner_email) {
       map.set(biz.id, { email: biz.owner_email, name: biz.owner_name });
@@ -250,9 +249,9 @@ export async function fetchAdminBusinessDetail(id: string): Promise<BusinessDeta
     const activeIds = await recentActiveIds(client, new Date(Date.now() - 30 * DAY).toISOString());
     const ownerFromMembers = await ownerMap(client, mrows);
     const bizData = biz.data as BusinessRow;
-    
-    let ownerEmail = ownerFromMembers.get(id)?.email ?? bizData.owner_email ?? null;
-    let ownerName = ownerFromMembers.get(id)?.name ?? bizData.owner_name ?? null;
+
+    const ownerEmail = ownerFromMembers.get(id)?.email ?? bizData.owner_email ?? null;
+    const ownerName = ownerFromMembers.get(id)?.name ?? bizData.owner_name ?? null;
 
     const uids = Array.from(new Set(mrows.map((m) => m.user_id)));
     const prof = uids.length

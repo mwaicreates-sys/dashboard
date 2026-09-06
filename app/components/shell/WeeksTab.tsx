@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useDashboardData } from "@/lib/dashboardData";
 import { Transaction } from "@/data/model/types";
 import { getWeeksOfYear, shortDayLabel, weekRangeLabel, formatMoney, todayISO, relativeDayLabel } from "@/lib/dates";
@@ -28,42 +28,32 @@ export function WeeksTab({
   const initialPositionedRef = useRef(false);
   const today = todayISO();
 
-  const yearTx = useMemo(
-    () =>
-      displayTransactions.filter(
-        (t) => t.date >= `${selectedYear}-01-01` && t.date <= `${selectedYear}-12-31`
-      ),
-    [displayTransactions, selectedYear]
+  const yearTx = displayTransactions.filter(
+    (t) => t.date >= `${selectedYear}-01-01` && t.date <= `${selectedYear}-12-31`
   );
 
-  const byDay = useMemo<TxByDay>(() => {
-    const map: TxByDay = {};
-    for (const tx of yearTx) {
-      (map[tx.date] ??= []).push(tx);
-    }
-    for (const key of Object.keys(map)) map[key].sort((a, b) => b.amount - a.amount);
-    return map;
-  }, [yearTx]);
+  const byDay: TxByDay = {};
+  for (const tx of yearTx) {
+    (byDay[tx.date] ??= []).push(tx);
+  }
+  for (const key of Object.keys(byDay)) byDay[key].sort((a, b) => b.amount - a.amount);
 
-  const weeks = useMemo(() => getWeeksOfYear(selectedYear), [selectedYear]);
+  const weeks = getWeeksOfYear(selectedYear);
 
-  const totals = useMemo<Record<number, WeekTotals>>(() => {
-    const out: Record<number, WeekTotals> = {};
-    for (const week of weeks) {
-      const tot: WeekTotals = { count: 0, income: 0, expense: 0 };
-      for (const day of week.days) {
-        const items = byDay[day.date];
-        if (!items) continue;
-        for (const tx of items) {
-          tot.count += 1;
-          if (tx.type === "income") tot.income += tx.amount;
-          else if (tx.type === "expense") tot.expense += tx.amount;
-        }
+  const totals: Record<number, WeekTotals> = {};
+  for (const week of weeks) {
+    const tot: WeekTotals = { count: 0, income: 0, expense: 0 };
+    for (const day of week.days) {
+      const items = byDay[day.date];
+      if (!items) continue;
+      for (const tx of items) {
+        tot.count += 1;
+        if (tx.type === "income") tot.income += tx.amount;
+        else if (tx.type === "expense") tot.expense += tx.amount;
       }
-      out[week.weekNumber] = tot;
     }
-    return out;
-  }, [weeks, byDay]);
+    totals[week.weekNumber] = tot;
+  }
 
   const isCurrentYear = selectedYear === Number(today.slice(0, 4));
   const currentWeek = isCurrentYear

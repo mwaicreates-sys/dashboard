@@ -11,7 +11,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
-  Legend,
 } from "recharts";
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyCompact } from "@/lib/currency";
@@ -102,6 +101,27 @@ export function IncomeStreamStack() {
         return { month: label, ...d };
       })
     : [];
+
+  const hasMeaningfulIncomeData = chartData.some((entry) =>
+    Object.values(entry).some((value) => Number(value) > 0)
+  );
+
+  if (!selectedPeriod || !hasMeaningfulIncomeData) {
+    return (
+      <Link
+        href="/income"
+        aria-label="Income Stream Stack — view income details"
+        className="group block w-full rounded focus:outline-none focus-visible:ring-1 focus-visible:ring-blue"
+      >
+        <h3 className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text group-hover:text-primary-text">
+          Income Stream Stack
+        </h3>
+        <div className="mt-1.5 flex h-[50px] sm:h-[70px] items-center justify-center rounded border border-dashed border-border bg-card/30 text-[11px] sm:text-[13px] text-secondary-text">
+          No income data yet
+        </div>
+      </Link>
+    );
+  }
 
   return (
     <Link

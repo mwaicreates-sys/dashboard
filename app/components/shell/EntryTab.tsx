@@ -103,8 +103,25 @@ export function EntryTab() {
   );
 
   const kindForTx = (tx: Transaction): KindConfig => {
-    const group = catById.get(tx.categoryId)?.group;
+    const category = catById.get(tx.categoryId);
+    const group = category?.group;
+
     if (group === "investments") return KINDS.find((k) => k.id === "investments")!;
+
+    const inferredTransferKind = (() => {
+      const accountTypes = [
+        accById.get(tx.accountId)?.type,
+        tx.toAccountId ? accById.get(tx.toAccountId)?.type : undefined,
+      ].filter((type): type is NonNullable<typeof type> => Boolean(type));
+      if (accountTypes.some((type) => type === "savings")) return KINDS.find((k) => k.id === "savings")!;
+      if (accountTypes.some((type) => type === "investment")) return KINDS.find((k) => k.id === "investments")!;
+      if (accountTypes.some((type) => type === "credit" || type === "loan")) return KINDS.find((k) => k.id === "debt")!;
+      return null;
+    })();
+
+    if (tx.type === "income") return KINDS.find((k) => k.id === "income")!;
+    if (tx.type === "transfer" && inferredTransferKind) return inferredTransferKind;
+
     const byGroup = KINDS.find(
       (k) =>
         k.id !== "other" &&
@@ -113,7 +130,26 @@ export function EntryTab() {
         group !== undefined &&
         k.groups.includes(group)
     );
-    return byGroup ?? KINDS.find((k) => k.id === "other")!;
+
+    if (byGroup) return byGroup;
+
+    // Fallback for legacy or partially-missing category metadata: still classify
+    // real financial movement by the transaction/account type instead of forcing
+    // every row into Other.
+    if (tx.type === "expense" || tx.type === "transfer") {
+      if (category?.name.toLowerCase().includes("loan") || category?.name.toLowerCase().includes("credit")) {
+        return KINDS.find((k) => k.id === "debt")!;
+      }
+      if (category?.name.toLowerCase().includes("savings") || category?.name.toLowerCase().includes("reserve") || category?.name.toLowerCase().includes("emergency")) {
+        return KINDS.find((k) => k.id === "savings")!;
+      }
+      if (category?.name.toLowerCase().includes("investment") || category?.name.toLowerCase().includes("equipment") || category?.name.toLowerCase().includes("retirement") || category?.name.toLowerCase().includes("expansion")) {
+        return KINDS.find((k) => k.id === "investments")!;
+      }
+      return KINDS.find((k) => k.id === "outflow")!;
+    }
+
+    return KINDS.find((k) => k.id === "other")!;
   };
 
   // Flow stats per kind from actual year transactions (one pass).

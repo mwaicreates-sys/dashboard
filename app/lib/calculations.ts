@@ -14,6 +14,81 @@ import {
 } from "@/data/model/types";
 import { formatCurrencyCompact } from "@/lib/currency";
 
+function hashString(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const hue = h % 360;
+  const sat = s / 100;
+  const light = l / 100;
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = light - c / 2;
+
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (hue < 60) {
+    r = c; g = x; b = 0;
+  } else if (hue < 120) {
+    r = x; g = c; b = 0;
+  } else if (hue < 180) {
+    r = 0; g = c; b = x;
+  } else if (hue < 240) {
+    r = 0; g = x; b = c;
+  } else if (hue < 300) {
+    r = c; g = 0; b = x;
+  } else {
+    r = x; g = 0; b = c;
+  }
+
+  const toHex = (channel: number) =>
+    Math.round((channel + m) * 255)
+      .toString(16)
+      .padStart(2, "0");
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
+function categoryColors(categories: Category[]): Map<string, string> {
+  const assignments = new Map<string, string>();
+  const used = new Set<string>();
+
+  categories.forEach((cat, index) => {
+    const nameSeed = cat.name || cat.id || `category-${index}`;
+    const preferred = cat.color && cat.color.trim().length > 0 ? cat.color : "";
+
+    let color = preferred;
+    if (!color || used.has(color)) {
+      const hue = (hashString(nameSeed) + index * 47) % 360;
+      const sat = 68;
+      const light = 48 + (index % 4) * 5;
+      color = hslToHex(hue, sat, light);
+    }
+
+    let fallbackIndex = 0;
+    while (used.has(color)) {
+      const hue = (hashString(`${nameSeed}-${fallbackIndex + 1}`) + index * 47) % 360;
+      const sat = 64 + (fallbackIndex % 3) * 6;
+      const light = 42 + ((index + fallbackIndex) % 5) * 6;
+      color = hslToHex(hue, sat, light);
+      fallbackIndex += 1;
+    }
+
+    assignments.set(cat.id, color);
+    used.add(color);
+  });
+
+  return assignments;
+}
+
 export function calculateKPIs(
   transactions: Transaction[],
   accounts: Account[],
@@ -82,11 +157,12 @@ export function calculateIncomeSplit(
   const periodTx = transactions.filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "income");
   const total = periodTx.reduce((sum, t) => sum + t.amount, 0);
   const incomeCategories = categories.filter((c) => c.type === "income");
+  const colors = categoryColors(incomeCategories);
 
   return incomeCategories.map((cat) => {
     const catTotal = periodTx.filter((t) => t.categoryId === cat.id).reduce((sum, t) => sum + t.amount, 0);
     const pct = total > 0 ? Math.round((catTotal / total) * 100) : 0;
-    return { name: cat.name, value: pct, color: cat.color };
+    return { name: cat.name, value: pct, color: colors.get(cat.id) ?? cat.color };
   });
 }
 
@@ -98,11 +174,12 @@ export function calculateOutflowTypes(
   const periodTx = transactions.filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense");
   const total = periodTx.reduce((sum, t) => sum + t.amount, 0);
   const expenseCategories = categories.filter((c) => c.type === "expense");
+  const colors = categoryColors(expenseCategories);
 
   return expenseCategories.map((cat) => {
     const catTotal = periodTx.filter((t) => t.categoryId === cat.id).reduce((sum, t) => sum + t.amount, 0);
     const pct = total > 0 ? Math.round((catTotal / total) * 100) : 0;
-    return { name: cat.name, value: pct, color: cat.color };
+    return { name: cat.name, value: pct, color: colors.get(cat.id) ?? cat.color };
   });
 }
 
