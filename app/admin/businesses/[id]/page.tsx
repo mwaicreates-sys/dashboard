@@ -67,31 +67,20 @@ export default function BusinessDetailPage() {
     }
 
     try {
-      const { data: response, error: rpcError } = await client.rpc("generate_owner_activation_code", {
+      const { data: activationCode, error: rpcError } = await client.rpc("generate_owner_activation_code", {
         p_business_id: id,
         p_email: business.ownerEmail,
       });
 
       if (rpcError) {
-        setGenerationError("Could not generate access code. Please try again.");
+        setGenerationError(rpcError.message || "Could not generate access code. Please try again.");
         console.error("generate_owner_activation_code error:", rpcError);
-      } else if (typeof response === "object" && response !== null && "activation_code" in response) {
+      } else if (typeof activationCode === "string" && activationCode.trim()) {
         if (data && data.business) {
           setData({
             business: {
               ...data.business,
-              accessCode: response.activation_code as string,
-            },
-            members: data.members,
-            activities: data.activities,
-          });
-        }
-      } else if (typeof response === "string" && response.length > 0) {
-        if (data && data.business) {
-          setData({
-            business: {
-              ...data.business,
-              accessCode: response,
+              accessCode: activationCode,
             },
             members: data.members,
             activities: data.activities,
