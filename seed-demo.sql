@@ -104,11 +104,13 @@ FROM demo_biz d, (VALUES
 -- ============================================================
 INSERT INTO public.transactions (
   business_id, local_id, date, account_local_id, to_account_local_id,
-  category_local_id, type, amount, description, status, notes, currency
+  account_id, to_account_id, category_local_id, category_id,
+  type, amount, description, status, notes, currency
 )
 SELECT d.id, v.local_id, v.date, v.account_local_id, v.to_account_local_id,
-       v.category_local_id, v.type, v.amount, v.description, v.status, v.notes, v.currency
-FROM demo_biz d, (VALUES
+       a.id, ta.id, v.category_local_id, c.id,
+       v.type, v.amount, v.description, v.status, v.notes, v.currency
+FROM demo_biz d CROSS JOIN (VALUES
   ('tx-001', '2026-01-05', 'a1', NULL, 'inc-2',  'income',    85000, 'Website project — ABC Motors',       'cleared', 'Phase 1 website', 'KES'),
   ('tx-002', '2026-01-08', 'a1', NULL, 'exp-2',  'expense',    4500, 'Adobe Creative Cloud',               'cleared', 'Monthly sub', 'KES'),
   ('tx-003', '2026-01-10', 'a1', NULL, 'exp-3',  'expense',    3000, 'Internet & office phone',            'cleared', NULL, 'KES'),
@@ -215,14 +217,20 @@ FROM demo_biz d, (VALUES
   ('tx-104', '2026-09-25', 'a1', NULL, 'exp-7',  'expense',   32000, 'Contractor — senior developer',      'cleared', 'Platform build', 'KES'),
   ('tx-105', '2026-09-28', 'a1', NULL, 'exp-11', 'expense',    1500, 'Bank charges — M-Pesa fees',         'cleared', NULL, 'KES'),
   ('tx-106', '2026-09-30', 'a1', NULL, 'inc-4',  'income',    50000, 'Consulting — Startup advisory',      'cleared', NULL, 'KES')
-) AS v(local_id, date, account_local_id, to_account_local_id, category_local_id, type, amount, description, status, notes, currency);
+) AS v(local_id, date, account_local_id, to_account_local_id, category_local_id, type, amount, description, status, notes, currency)
+LEFT JOIN public.accounts a
+ ON a.business_id = d.id AND a.local_id = v.account_local_id
+LEFT JOIN public.accounts ta
+ ON ta.business_id = d.id AND ta.local_id = v.to_account_local_id
+LEFT JOIN public.categories c
+ ON c.business_id = d.id AND c.local_id = v.category_local_id;
 
 -- ============================================================
 -- PHASE 6: BUDGETS
 -- ============================================================
-INSERT INTO public.budgets (business_id, local_id, category_local_id, period_id, month, planned_amount, actual_amount)
-SELECT d.id, v.local_id, v.category_local_id, v.period_id, v.month, v.planned_amount, v.actual_amount
-FROM demo_biz d, (VALUES
+INSERT INTO public.budgets (business_id, local_id, category_local_id, category_id, period_id, month, planned_amount, actual_amount)
+SELECT d.id, v.local_id, v.category_local_id, c.id, v.period_id, v.month, v.planned_amount, v.actual_amount
+FROM demo_biz d CROSS JOIN (VALUES
   ('bud-mkt-jan', 'exp-1', '2026', '2026-01', 30000, 15000),
   ('bud-mkt-feb', 'exp-1', '2026', '2026-02', 30000, 18000),
   ('bud-mkt-mar', 'exp-1', '2026', '2026-03', 30000, 12000),
@@ -295,7 +303,9 @@ FROM demo_biz d, (VALUES
   ('bud-tax-jul', 'exp-12', '2026', '2026-07', 10000,  9000),
   ('bud-tax-aug', 'exp-12', '2026', '2026-08', 10000,  9000),
   ('bud-tax-sep', 'exp-12', '2026', '2026-09', 10000, 15000)
-) AS v(local_id, category_local_id, period_id, month, planned_amount, actual_amount);
+) AS v(local_id, category_local_id, period_id, month, planned_amount, actual_amount)
+LEFT JOIN public.categories c
+ ON c.business_id = d.id AND c.local_id = v.category_local_id;
 
 -- ============================================================
 -- PHASE 7: GOALS
@@ -314,11 +324,13 @@ FROM demo_biz d, (VALUES
 -- ============================================================
 INSERT INTO public.planned_transactions (
   business_id, local_id, date, account_local_id, to_account_local_id,
-  category_local_id, description, amount, type, status, recurrence, currency
+  account_id, to_account_id, category_local_id, category_id,
+  description, amount, type, status, recurrence, currency
 )
 SELECT d.id, v.local_id, v.date, v.account_local_id, v.to_account_local_id,
-       v.category_local_id, v.description, v.amount, v.type, v.status, v.recurrence, v.currency
-FROM demo_biz d, (VALUES
+       a.id, ta.id, v.category_local_id, c.id,
+       v.description, v.amount, v.type, v.status, v.recurrence, v.currency
+FROM demo_biz d CROSS JOIN (VALUES
   ('p-mkt-oct', '2026-10-01', 'a1', NULL, 'exp-2', 'Adobe Creative Cloud',  4500, 'expense', 'pending', 'monthly', 'KES'),
   ('p-int-oct', '2026-10-01', 'a1', NULL, 'exp-3', 'Internet & phone',       3000, 'expense', 'pending', 'monthly', 'KES'),
   ('p-rent-oct', '2026-10-01', 'a1', NULL, 'exp-8', 'Office rent',            25000, 'expense', 'pending', 'monthly', 'KES'),
@@ -331,7 +343,13 @@ FROM demo_biz d, (VALUES
   ('p-domain', '2027-01-01', 'a1', NULL, 'exp-3', 'Domain renewal',          3500, 'expense', 'pending', 'yearly',  'KES'),
   ('p-chair',  '2026-10-05', 'a1', NULL, 'exp-6', 'Office chair',           12000, 'expense', 'pending', 'once',    'KES'),
   ('p-design', '2026-10-10', 'a1', NULL, 'inc-3', 'Design retainer',       25000, 'income',  'pending', 'once',    'KES')
-) AS v(local_id, date, account_local_id, to_account_local_id, category_local_id, description, amount, type, status, recurrence, currency);
+) AS v(local_id, date, account_local_id, to_account_local_id, category_local_id, description, amount, type, status, recurrence, currency)
+LEFT JOIN public.accounts a
+ ON a.business_id = d.id AND a.local_id = v.account_local_id
+LEFT JOIN public.accounts ta
+ ON ta.business_id = d.id AND ta.local_id = v.to_account_local_id
+LEFT JOIN public.categories c
+ ON c.business_id = d.id AND c.local_id = v.category_local_id;
 
 -- ============================================================
 -- PHASE 9: ACTIVITIES

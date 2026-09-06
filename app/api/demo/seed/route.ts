@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServerClient, getServerIsPlatformAdmin, getServerMemberships } from "@/lib/serverAuth";
 import {
   demoCategories,
@@ -44,6 +45,19 @@ export async function POST(request: Request) {
     }
 
     const isPlatformAdmin = await getServerIsPlatformAdmin();
+    let db = supabase;
+    if (isPlatformAdmin) {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!serviceKey) {
+        return NextResponse.json(
+          { error: "Demo seeding requires the server-only Supabase service-role key." },
+          { status: 500 },
+        );
+      }
+      db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+    }
 
     // 3. Resolve the dedicated demo tenant by stable identifier. Geraldmwaike
     // and Mwai & Co are intentionally never candidates for this seed.
@@ -82,7 +96,7 @@ export async function POST(request: Request) {
         );
       }
 
-      const { data: createdBusiness, error: createdBusinessError } = await supabase
+      const { data: createdBusiness, error: createdBusinessError } = await db
         .from("businesses")
         .select("id, name, slug, currency")
         .eq("id", createdBusinessId)
@@ -107,7 +121,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only the existing Demo Business may be seeded." }, { status: 400 });
     }
 
-    const { data: businessMembers } = await supabase
+    const { data: businessMembers } = await db
       .from("business_members")
       .select("user_id")
       .eq("business_id", businessId)
@@ -117,7 +131,7 @@ export async function POST(request: Request) {
       .filter((userId): userId is string => typeof userId === "string");
 
     // 5. Verify the business exists
-    const { data: verifiedBusiness, error: verifiedBusinessError } = await supabase
+    const { data: verifiedBusiness, error: verifiedBusinessError } = await db
       .from("businesses")
       .select("id, name, slug, currency")
       .eq("id", businessId)
@@ -130,15 +144,15 @@ export async function POST(request: Request) {
     // 6. Clear only rows owned by this deterministic seed. Existing business
     // members and unrelated tenant records remain untouched.
     const deleteResults = await Promise.all([
-      supabase.from("transactions").delete().eq("business_id", businessId).in("local_id", demoTransactions.map((t) => t.id)),
-      supabase.from("planned_transactions").delete().eq("business_id", businessId).in("local_id", demoPlannedTransactions.map((p) => p.id)),
-      supabase.from("activities").delete().eq("business_id", businessId).in("local_id", demoActivities.map((a) => a.id)),
-      supabase.from("notifications").delete().eq("business_id", businessId).in("local_id", demoNotifications.map((n) => n.id)),
-      supabase.from("budgets").delete().eq("business_id", businessId).in("local_id", demoBudgets.map((b) => b.id)),
-      supabase.from("goals").delete().eq("business_id", businessId).in("local_id", demoGoals.map((g) => g.id)),
-      supabase.from("accounts").delete().eq("business_id", businessId).in("local_id", demoAccounts.map((a) => a.id)),
-      supabase.from("categories").delete().eq("business_id", businessId).in("local_id", demoCategories.map((c) => c.id)),
-      supabase.from("app_settings").delete().eq("business_id", businessId).in("key", ["todos", "selectedYear"]),
+      db.from("transactions").delete().eq("business_id", businessId).in("local_id", demoTransactions.map((t) => t.id)),
+      db.from("planned_transactions").delete().eq("business_id", businessId).in("local_id", demoPlannedTransactions.map((p) => p.id)),
+      db.from("activities").delete().eq("business_id", businessId).in("local_id", demoActivities.map((a) => a.id)),
+      db.from("notifications").delete().eq("business_id", businessId).in("local_id", demoNotifications.map((n) => n.id)),
+      db.from("budgets").delete().eq("business_id", businessId).in("local_id", demoBudgets.map((b) => b.id)),
+      db.from("goals").delete().eq("business_id", businessId).in("local_id", demoGoals.map((g) => g.id)),
+      db.from("accounts").delete().eq("business_id", businessId).in("local_id", demoAccounts.map((a) => a.id)),
+      db.from("categories").delete().eq("business_id", businessId).in("local_id", demoCategories.map((c) => c.id)),
+      db.from("app_settings").delete().eq("business_id", businessId).in("key", ["todos", "year", "currency"]),
     ]);
     const deleteError = deleteResults.find((result) => result.error)?.error;
     if (deleteError) {
@@ -154,8 +168,15 @@ export async function POST(request: Request) {
       type: c.type,
       color: c.color,
     }));
-    const { error: catError } = await supabase.from("categories").insert(catRows);
+    const { data: insertedCategories, error: catError } = await db
+      .from("categories")
+      .insert(catRows)
+      .select("id, local_id");
     if (catError) return NextResponse.json({ error: `Categories: ${catError.message}` }, { status: 500 });
+    const categoryIds = new Map((insertedCategories ?? []).map((row) => [row.local_id, row.id]));
+    if (categoryIds.size !== demoCategories.length) {
+      return NextResponse.json({ error: "Categories: seeded category ids could not be resolved." }, { status: 500 });
+    }
 
     // 8. Seed accounts
     const accRows = demoAccounts.map((a) => ({
@@ -169,8 +190,15 @@ export async function POST(request: Request) {
       institution: a.institution || null,
       active: a.active,
     }));
-    const { error: accError } = await supabase.from("accounts").insert(accRows);
+    const { data: insertedAccounts, error: accError } = await db
+      .from("accounts")
+      .insert(accRows)
+      .select("id, local_id");
     if (accError) return NextResponse.json({ error: `Accounts: ${accError.message}` }, { status: 500 });
+    const accountIds = new Map((insertedAccounts ?? []).map((row) => [row.local_id, row.id]));
+    if (accountIds.size !== demoAccounts.length) {
+      return NextResponse.json({ error: "Accounts: seeded account ids could not be resolved." }, { status: 500 });
+    }
 
     // 9. Seed transactions
     const txRows = demoTransactions.map((t) => ({
@@ -178,16 +206,19 @@ export async function POST(request: Request) {
       local_id: t.id,
       date: t.date,
       account_local_id: t.accountId,
+      account_id: accountIds.get(t.accountId),
       category_local_id: t.categoryId,
+      category_id: categoryIds.get(t.categoryId),
       type: t.type,
       amount: t.amount,
       description: t.description,
       status: t.status,
       notes: t.notes || null,
       to_account_local_id: t.toAccountId || null,
+      to_account_id: t.toAccountId ? accountIds.get(t.toAccountId) : null,
       currency: t.currency || "KES",
     }));
-    const { error: txError } = await supabase.from("transactions").insert(txRows);
+    const { error: txError } = await db.from("transactions").insert(txRows);
     if (txError) return NextResponse.json({ error: `Transactions: ${txError.message}` }, { status: 500 });
 
     // 10. Seed budgets
@@ -195,12 +226,13 @@ export async function POST(request: Request) {
       business_id: businessId,
       local_id: b.id,
       category_local_id: b.categoryId,
+      category_id: categoryIds.get(b.categoryId),
       period_id: b.periodId,
       month: b.month,
       planned_amount: b.plannedAmount,
       actual_amount: b.actualAmount,
     }));
-    const { error: budgetError } = await supabase.from("budgets").insert(budgetRows);
+    const { error: budgetError } = await db.from("budgets").insert(budgetRows);
     if (budgetError) return NextResponse.json({ error: `Budgets: ${budgetError.message}` }, { status: 500 });
 
     // 11. Seed goals
@@ -214,7 +246,7 @@ export async function POST(request: Request) {
       status: g.status,
       currency: g.currency || "KES",
     }));
-    const { error: goalError } = await supabase.from("goals").insert(goalRows);
+    const { error: goalError } = await db.from("goals").insert(goalRows);
     if (goalError) return NextResponse.json({ error: `Goals: ${goalError.message}` }, { status: 500 });
 
     // 12. Seed planned transactions
@@ -223,16 +255,19 @@ export async function POST(request: Request) {
       local_id: p.id,
       date: p.date,
       account_local_id: p.accountId,
+      account_id: accountIds.get(p.accountId),
       category_local_id: p.categoryId,
+      category_id: categoryIds.get(p.categoryId),
       description: p.description,
       amount: p.amount,
       type: p.type,
       status: p.status,
       recurrence: p.recurrence || null,
       to_account_local_id: p.toAccountId || null,
+      to_account_id: p.toAccountId ? accountIds.get(p.toAccountId) : null,
       currency: "KES",
     }));
-    const { error: plannedError } = await supabase.from("planned_transactions").insert(plannedRows);
+    const { error: plannedError } = await db.from("planned_transactions").insert(plannedRows);
     if (plannedError) return NextResponse.json({ error: `Planned: ${plannedError.message}` }, { status: 500 });
 
     // 13. Seed activities
@@ -248,7 +283,7 @@ export async function POST(request: Request) {
       priority: a.priority || null,
       completed_at: a.completedAt || null,
     }));
-    const { error: activityError } = await supabase.from("activities").insert(activityRows);
+    const { error: activityError } = await db.from("activities").insert(activityRows);
     if (activityError) return NextResponse.json({ error: `Activities: ${activityError.message}` }, { status: 500 });
 
     // 14. Seed notifications
@@ -261,24 +296,23 @@ export async function POST(request: Request) {
       status: n.status,
       date: n.date,
     }));
-    const { error: notifError } = await supabase.from("notifications").insert(notifRows);
+    const { error: notifError } = await db.from("notifications").insert(notifRows);
     if (notifError) return NextResponse.json({ error: `Notifications: ${notifError.message}` }, { status: 500 });
 
     // 15. Seed todos
-    const { error: todosError } = await supabase.from("app_settings").insert({
+    const { error: todosError } = await db.from("app_settings").insert({
       business_id: businessId,
       key: "todos",
       value: demoTodos,
     });
     if (todosError) return NextResponse.json({ error: `Todos: ${todosError.message}` }, { status: 500 });
 
-    // 16. Set selected year
-    const { error: yearError } = await supabase.from("app_settings").insert({
-      business_id: businessId,
-      key: "selectedYear",
-      value: 2026,
-    });
-    if (yearError) return NextResponse.json({ error: `Year: ${yearError.message}` }, { status: 500 });
+    // 16. Set the business display settings using the keys read by cloudSync.
+    const { error: settingsError } = await db.from("app_settings").insert([
+      { business_id: businessId, key: "year", value: 2026 },
+      { business_id: businessId, key: "currency", value: "KES" },
+    ]);
+    if (settingsError) return NextResponse.json({ error: `Settings: ${settingsError.message}` }, { status: 500 });
 
     const incomeTotal = demoTransactions
       .filter((transaction) => transaction.type === "income")
