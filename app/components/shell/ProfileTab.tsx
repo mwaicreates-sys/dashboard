@@ -19,6 +19,7 @@ interface UserProfile {
 
 const DEFAULT_PROFILE: UserProfile = { name: "", email: "" };
 const profileCache = new Map<string, UserProfile>();
+let cachedProfileUserId: string | null = null;
 
 const THEME_OPTIONS: Array<{ id: ThemePreference; label: string; icon: typeof SunIcon }> = [
   { id: "light", label: "Light", icon: SunIcon },
@@ -31,11 +32,15 @@ export function ProfileTab() {
   const { accounts, categories, plannedTransactions, availableYears, currency, baseCurrency, fxState, setCurrency, activeBusiness } =
     useDashboardData();
 
-  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [profile, setProfile] = useState<UserProfile>(() =>
+    cachedProfileUserId ? profileCache.get(cachedProfileUserId) ?? DEFAULT_PROFILE : DEFAULT_PROFILE
+  );
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(() =>
+    cachedProfileUserId ? !profileCache.has(cachedProfileUserId) : true
+  );
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [greeting, setGreeting] = useState("");
   const profileRequest = useRef(0);
@@ -58,6 +63,13 @@ export function ProfileTab() {
       if (!isCurrentRequest()) return;
       if (uid) {
         const cachedProfile = profileCache.get(uid);
+        if (cachedProfileUserId !== uid) {
+          cachedProfileUserId = uid;
+          setProfile(cachedProfile ?? DEFAULT_PROFILE);
+          setProfileLoading(!cachedProfile);
+          setProfileError(null);
+          setProfileSaved(false);
+        }
         if (cachedProfile) {
           setProfile(cachedProfile);
           setProfileLoading(false);
@@ -74,6 +86,7 @@ export function ProfileTab() {
         const profileEmail = typeof prof.data?.email === "string" ? prof.data.email : email;
         const loadedProfile = { name, email: profileEmail };
         profileCache.set(uid, loadedProfile);
+        cachedProfileUserId = uid;
         setProfile(loadedProfile);
         setProfileLoading(false);
       } else {
@@ -135,6 +148,7 @@ export function ProfileTab() {
 
     setProfile({ name: profile.name.trim(), email: nextEmail });
     profileCache.set(uid, { name: profile.name.trim(), email: nextEmail });
+    cachedProfileUserId = uid;
     setProfileSaved(true);
     setSavingProfile(false);
   };
