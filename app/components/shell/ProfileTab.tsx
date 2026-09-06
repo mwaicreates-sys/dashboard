@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTheme, ThemePreference } from "@/components/theme/ThemeProvider";
 import { useDashboardData } from "@/lib/dashboardData";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
-import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { CURRENCIES } from "@/lib/currency";
 import { describeRateAge } from "@/lib/exchangeRates";
 import { SunIcon, MoonIcon, DeviceIcon, CheckIcon, ChevronRightIcon, XIcon } from "./icons";
@@ -30,29 +30,38 @@ export function ProfileTab() {
   const { accounts, categories, plannedTransactions, availableYears, currency, baseCurrency, fxState, setCurrency, activeBusiness } =
     useDashboardData();
 
-  const [profile, setProfile] = useState<UserProfile>(() =>
-    loadFromStorage(PROFILE_KEY, DEFAULT_PROFILE)
-  );
+  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [greeting, setGreeting] = useState("");
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
     let cancelled = false;
     (async () => {
       const client = getSupabaseBrowserClient();
-      if (!client || cancelled) return;
+      if (!client) {
+        setProfile(loadFromStorage(PROFILE_KEY, DEFAULT_PROFILE));
+        return;
+      }
+      if (cancelled) return;
       const { data: auth } = await client.auth.getUser();
       const uid = auth?.user?.id;
       const email = auth?.user?.email ?? "";
       if (cancelled) return;
       if (uid) {
-        const prof = await client.from("profiles").select("full_name").eq("id", uid).maybeSingle();
+        const prof = await client.from("profiles").select("email,full_name").eq("id", uid).maybeSingle();
         if (cancelled) return;
+        if (prof.error) {
+          setProfileError("Could not load your profile.");
+          return;
+        }
         const name = typeof prof.data?.full_name === "string" ? prof.data.full_name : "";
-        setProfile({ name, email });
+        const profileEmail = typeof prof.data?.email === "string" ? prof.data.email : email;
+        setProfile({ name, email: profileEmail });
       } else {
-        setProfile({ name: "", email });
+        setProfileError("Your session could not be verified.");
       }
     })();
     return () => {
@@ -60,11 +69,57 @@ export function ProfileTab() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isSupabaseConfigured()) {
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setProfileError(null);
+    setProfileSaved(false);
+    const client = getSupabaseBrowserClient();
+    if (!client) {
       saveToStorage(PROFILE_KEY, profile);
+      setProfileSaved(true);
+      setSavingProfile(false);
+      return;
     }
-  }, [profile]);
+
+    const { data: auth, error: authError } = await client.auth.getUser();
+    const uid = auth.user?.id;
+    if (authError || !uid) {
+      setProfileError("Your session has expired. Please sign in again.");
+      setSavingProfile(false);
+      return;
+    }
+
+    const nextEmail = profile.email.trim().toLowerCase();
+    const { error: emailError } =
+      nextEmail !== (auth.user.email ?? "").trim().toLowerCase()
+        ? await client.auth.updateUser({ email: nextEmail })
+        : { error: null };
+    if (emailError) {
+      setProfileError("Could not update your email.");
+      setSavingProfile(false);
+      return;
+    }
+
+    const { error: profileError } = await client
+      .from("profiles")
+      .update({ full_name: profile.name.trim(), email: nextEmail })
+      .eq("id", uid);
+    if (profileError) {
+      console.error("Business profile update failed.", {
+        code: profileError.code,
+        message: profileError.message,
+        details: profileError.details,
+        hint: profileError.hint,
+      });
+      setProfileError("Could not save your profile.");
+      setSavingProfile(false);
+      return;
+    }
+
+    setProfile({ name: profile.name.trim(), email: nextEmail });
+    setProfileSaved(true);
+    setSavingProfile(false);
+  };
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -157,6 +212,18 @@ export function ProfileTab() {
                   className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
                 />
               </label>
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void saveProfile()}
+                disabled={savingProfile}
+                className="inline-flex h-9 items-center rounded-xl bg-blue px-4 text-xs font-semibold text-white transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-60"
+              >
+                {savingProfile ? "Saving…" : "Save"}
+              </button>
+              {profileSaved ? <span role="status" className="text-xs text-green">Saved</span> : null}
+              {profileError ? <span role="alert" className="text-xs text-orange">{profileError}</span> : null}
             </div>
           </section>
 
