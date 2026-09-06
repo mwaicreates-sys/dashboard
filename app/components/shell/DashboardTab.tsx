@@ -2,8 +2,9 @@
 
 import { useMemo } from "react";
 import { CircularKPI } from "@/components/CircularKPI";
+import { NetWorthGrowth, IncomeStreamStack } from "@/components/HeaderCharts";
 import { useDashboardData } from "@/lib/dashboardData";
-import { formatMoneyFull, shortDayLabel, todayISO, addDaysISO } from "@/lib/dates";
+import { formatMoneyFull, shortDayLabel } from "@/lib/dates";
 import { RecurringSection } from "./RecurringSection";
 
 function RecordedSection() {
@@ -77,57 +78,12 @@ function RecordedSection() {
 }
 
 export function DashboardTab() {
-  const { kpis, displayTransactions, displayPlannedTransactions, selectedYear } = useDashboardData();
-
-  const yearTransactions = useMemo(
-    () =>
-      displayTransactions.filter(
-        (tx) => tx.date.startsWith(String(selectedYear))
-      ),
-    [displayTransactions, selectedYear]
-  );
-
-  const annualIncome = useMemo(
-    () => yearTransactions.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0),
-    [yearTransactions]
-  );
-
-  const annualOutflow = useMemo(
-    () => yearTransactions.filter((tx) => tx.type === "expense").reduce((sum, tx) => sum + tx.amount, 0),
-    [yearTransactions]
-  );
-
-  const today = todayISO();
-  const horizon = addDaysISO(today, 30);
-
-  const scheduledSoon = useMemo(
-    () =>
-      displayPlannedTransactions
-        .filter((p) => p.status === "pending" && p.date >= today && p.date <= horizon)
-        .reduce((sum, p) => sum + p.amount, 0),
-    [displayPlannedTransactions, today, horizon]
-  );
-
-  const summaryCards = [
-    ...kpis,
-    {
-      label: "Annual net",
-      value: formatMoneyFull(annualIncome - annualOutflow),
-      percentage: annualIncome > 0 ? Math.round(((annualIncome - annualOutflow) / annualIncome) * 100) : 0,
-      color: annualIncome >= annualOutflow ? "#5B8C5A" : "#E87A5D",
-    },
-    {
-      label: "Scheduled",
-      value: formatMoneyFull(scheduledSoon),
-      percentage: scheduledSoon > 0 ? 100 : 0,
-      color: "#3B7A9E",
-    },
-  ];
+  const { kpis } = useDashboardData();
 
   return (
     <div className="space-y-3 md:space-y-4">
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {summaryCards.map((kpi) => (
+        {kpis.map((kpi) => (
           <div key={kpi.label} className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
             <p className="mb-2 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-secondary-text">
               {kpi.label}
@@ -137,6 +93,14 @@ export function DashboardTab() {
             </div>
           </div>
         ))}
+
+        <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+          <NetWorthGrowth />
+        </div>
+
+        <div className="rounded-2xl border border-border bg-surface p-3 sm:p-4">
+          <IncomeStreamStack />
+        </div>
       </section>
 
       <section className="grid gap-3 lg:grid-cols-2">
