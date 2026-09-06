@@ -232,105 +232,96 @@ export function EntryTab() {
   };
 
   return (
-    <div className="space-y-3 md:space-y-4">
-      <header className="mb-4 md:mb-5">
+    <div className="flex flex-col gap-3 sm:gap-3.5">
+      <header>
         <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-text">Entry</p>
-        <h1 className="mt-1 text-3xl font-semibold leading-none text-primary-text md:text-4xl">
+        <h1 className="mt-1 text-2xl font-semibold leading-none text-primary-text sm:text-3xl md:text-4xl">
           Record money
         </h1>
-        <p className="mt-1.5 text-xs text-secondary-text">
+        <p className="mt-1 text-xs text-secondary-text">
           Choose a category to add your first entry.
         </p>
       </header>
 
-      <div className="flex flex-col gap-3 lg:gap-4 lg:flex-row lg:items-start">
-        {/* LEFT — Category cards */}
-        <section className="w-full lg:w-[65%]">
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-            {KINDS.map((kind) => {
-              const meta = CARD_META[kind.id];
-              const Icon = meta.icon;
-              const openForm = () => setForm({ kind });
-              const stat = statLine(kind.id);
-              return (
-                <div
-                  key={kind.id}
-                  className="group relative flex min-h-[124px] flex-col justify-between overflow-hidden rounded-2xl border border-border bg-surface p-3.5 transition-colors duration-200 hover:border-secondary-text/40 focus-within:border-blue/60 sm:min-h-[148px] sm:p-4"
+      {/* Six compact category cards — 3-across on desktop, 2-across on small, 1 on mobile */}
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {KINDS.map((kind) => {
+          const meta = CARD_META[kind.id];
+          const Icon = meta.icon;
+          const openForm = () => setForm({ kind });
+          const stat = statLine(kind.id);
+          return (
+            <div
+              key={kind.id}
+              className="group relative flex min-h-[96px] flex-col justify-between overflow-hidden rounded-xl border border-border bg-surface p-3 transition-colors duration-200 hover:border-secondary-text/40 focus-within:border-blue/60 sm:min-h-[120px] sm:p-3.5"
+            >
+              {meta.href ? (
+                <Link
+                  href={meta.href}
+                  aria-label={`View ${kind.label.toLowerCase()}`}
+                  className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue/60"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={openForm}
+                  aria-label={`Record ${kind.label.toLowerCase()}`}
+                  className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue/60"
+                />
+              )}
+
+              <div className="relative flex items-center gap-2">
+                <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${meta.chip}`}>
+                  <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                </span>
+                <p className="text-sm font-semibold text-primary-text">{kind.label}</p>
+              </div>
+
+              <div className="relative mt-0.5">
+                <p className="truncate text-base font-semibold tabular-nums text-primary-text">
+                  {stat.main}
+                </p>
+                <p className="truncate text-[10px] leading-tight text-muted-text">{stat.sub}</p>
+              </div>
+
+              <div className="relative flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openForm();
+                  }}
+                  aria-label={`Add ${kind.label.toLowerCase()} entry`}
+                  className="relative z-10 flex h-7 items-center gap-1.5 rounded-full bg-primary-text/[0.06] px-2.5 text-xs font-semibold text-primary-text outline-none transition-colors hover:bg-blue hover:text-white focus-visible:ring-2 focus-visible:ring-blue/60 dark:bg-white/10 dark:hover:bg-blue"
                 >
-                  {meta.href ? (
-                    <Link
-                      href={meta.href}
-                      aria-label={`View ${kind.label.toLowerCase()}`}
-                      className="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue/60"
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={openForm}
-                      aria-label={`Record ${kind.label.toLowerCase()}`}
-                      className="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue/60"
-                    />
-                  )}
+                  <PlusIcon className="h-3 w-3" strokeWidth={2.6} />
+                  Add
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-                  <div className="relative">
-                    <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${meta.chip}`}>
-                      <Icon className="h-[20px] w-[20px]" strokeWidth={1.8} />
-                    </span>
-                  </div>
-
-                  <div className="relative mt-3">
-                    <p className="text-sm font-semibold text-primary-text">{kind.label}</p>
-                    <p className="mt-0.5 truncate text-base font-semibold tabular-nums text-primary-text">
-                      {stat.main}
-                    </p>
-                    <p className="mt-0.5 truncate text-[11px] leading-tight text-muted-text">{stat.sub}</p>
-                  </div>
-
-                  <div className="relative mt-3 flex items-center justify-end">
-                    <span
-                      className="pointer-events-none absolute inset-x-[-0.75rem] bottom-[-0.75rem] h-16 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-                      style={{
-                        background:
-                          "radial-gradient(60% 80% at 85% 100%, rgba(125,125,125,0.08), transparent 70%)",
-                      }}
-                      aria-hidden="true"
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        openForm();
-                      }}
-                      aria-label={`Add ${kind.label.toLowerCase()} entry`}
-                      className="relative z-10 flex h-8 items-center gap-1.5 rounded-full bg-primary-text/[0.06] px-3 text-xs font-semibold text-primary-text outline-none transition-colors hover:bg-blue hover:text-white focus-visible:ring-2 focus-visible:ring-blue/60 dark:bg-white/10 dark:hover:bg-blue"
-                    >
-                      <PlusIcon className="h-3.5 w-3.5" strokeWidth={2.6} />
-                      Add
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* RIGHT — Sidebar: Scheduled + Recorded */}
-        <aside className="w-full lg:w-[35%] lg:space-y-4">
-          {/* Scheduled */}
-          <section>
-            <div className="mb-1.5 flex items-baseline justify-between">
+      {/* Scheduled + Recorded frames — same content width, full-width beneath the grid */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {/* Scheduled */}
+        <section className="rounded-2xl border border-border bg-surface">
+          <div className="border-b border-light-border px-3 py-2">
+            <div className="flex items-baseline justify-between gap-2">
               <h2 className="text-sm font-semibold text-primary-text">Scheduled</h2>
               <span className="text-[10px] text-muted-text">
                 {scheduled.length} waiting · not counted yet
               </span>
             </div>
-            {scheduled.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-4 text-center text-[11px] text-muted-text">
-                Nothing scheduled.
-              </p>
-            ) : (
-              <ul className="overflow-hidden rounded-2xl border border-border">
+          </div>
+          {scheduled.length === 0 ? (
+            <p className="mx-3 mt-2 rounded-xl border border-dashed border-border bg-card/30 px-3 py-3 text-center text-[11px] text-muted-text">
+              Nothing scheduled. Add planned entries from the cards above, then record them here when they arrive.
+            </p>
+          ) : (
+            <ul className="mt-0.5 divide-y divide-light-border">
                 {scheduled.map((p, i) => {
                   const overdue = p.date < today;
                   return (
@@ -395,17 +386,19 @@ export function EntryTab() {
           </section>
 
           {/* Recorded */}
-          <section>
-            <div className="mb-1.5 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-primary-text">Recorded</h2>
-              <span className="text-[10px] text-muted-text">latest {recorded.length}</span>
+          <section className="rounded-2xl border border-border bg-surface">
+            <div className="border-b border-light-border px-3 py-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-sm font-semibold text-primary-text">Recorded</h2>
+                <span className="text-[10px] text-muted-text">latest {recorded.length}</span>
+              </div>
             </div>
             {recorded.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-6 text-center text-[11px] text-muted-text">
+              <p className="mx-3 mt-2 rounded-xl border border-dashed border-border bg-card/30 px-3 py-3 text-center text-[11px] text-muted-text">
                 No entries yet. Pick a category above to add your first transaction.
               </p>
             ) : (
-              <ul className="overflow-hidden rounded-2xl border border-border">
+              <ul className="divide-y divide-light-border">
                 {recorded.map((tx, i) => {
                   const cat = catById.get(tx.categoryId);
                   return (
@@ -476,7 +469,6 @@ export function EntryTab() {
               </ul>
             )}
           </section>
-        </aside>
       </div>
 
       {/* Add / edit sheet */}
