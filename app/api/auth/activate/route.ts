@@ -163,20 +163,27 @@ export async function POST(request: NextRequest) {
 
   // Resolve the Auth identity from Auth itself, not from a potentially stale
   // profile row. This preserves one identity across devices and businesses.
-  const { data: listed, error: listUsersError } = await service.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-  if (listUsersError) {
-    console.error("Owner activation Auth-user lookup failed.", safeErrorDetails(listUsersError));
-    return NextResponse.json(
-      { ok: false, message: "Could not resolve the owner account." },
-      { status: 500 }
+  const perPage = 1000;
+  let page = 1;
+  let existingUser: { id: string } | undefined;
+  while (!existingUser) {
+    const { data: listed, error: listUsersError } = await service.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+    if (listUsersError) {
+      console.error("Owner activation Auth-user lookup failed.", safeErrorDetails(listUsersError));
+      return NextResponse.json(
+        { ok: false, message: "Could not resolve the owner account." },
+        { status: 500 }
+      );
+    }
+    existingUser = listed.users.find(
+      (user) => (user.email ?? "").trim().toLowerCase() === email
     );
+    if (existingUser || listed.users.length < perPage) break;
+    page += 1;
   }
-  const existingUser = listed.users.find(
-    (user) => (user.email ?? "").trim().toLowerCase() === email
-  );
   userId = existingUser?.id ?? null;
 
   if (!userId) {
@@ -187,18 +194,43 @@ export async function POST(request: NextRequest) {
       user_metadata: { full_name: claimRow.owner_name ?? null },
     });
     if (createError || !created.user) {
-      console.error(
-        "Owner activation Auth-user provisioning failed.",
-        createError
-          ? safeErrorDetails(createError)
-          : { message: "Auth user was not returned." }
-      );
-      return NextResponse.json(
-        { ok: false, message: "Could not provision the owner account." },
-        { status: 500 }
-      );
+      if (createError) {
+        const { data: retryListed, error: retryListError } = await service.auth.admin.listUsers({
+          page: 1,
+          perPage,
+        });
+        const concurrentUser = retryListError
+          ? undefined
+          : retryListed.users.find(
+              (user) => (user.email ?? "").trim().toLowerCase() === email
+            );
+        if (concurrentUser) {
+          userId = concurrentUser.id;
+        }
+      }
+      if (userId) {
+        // Another request created the same email concurrently; reuse it.
+      } else {
+        console.error(
+          "Owner activation Auth-user provisioning failed.",
+          createError
+            ? safeErrorDetails(createError)
+            : { message: "Auth user was not returned." }
+        );
+        return NextResponse.json(
+          { ok: false, message: "Could not provision the owner account." },
+          { status: 500 }
+        );
+      }
     }
-    userId = created.user.id;
+    if (!userId) userId = created.user?.id ?? null;
+  }
+  if (!userId) {
+    console.error("Owner activation did not resolve an Auth user.");
+    return NextResponse.json(
+      { ok: false, message: "Could not resolve the owner account." },
+      { status: 500 }
+    );
   }
 
   // A throwaway server-generated password lets the password grant below mint
