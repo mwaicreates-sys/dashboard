@@ -5,7 +5,6 @@ import { KPIGaugeGroup } from "@/components/CircularKPI";
 import { VisualizationGrid } from "@/components/VisualizationGrid";
 import { InformationGrid } from "@/components/InformationGrid";
 import { MonthlyPerformance } from "./MonthlyPerformance";
-import { RecurringSection } from "./RecurringSection";
 import { ExportReports } from "./ExportReports";
 
 /**
@@ -18,7 +17,7 @@ import { ExportReports } from "./ExportReports";
  *   Income Split | Outflow Types | Cumulative Growth
  *   Monthly Performance         — full-width
  *   Top 20 Outflow | Top 20 Spendings
- *   Upcoming & Recurring | Export & Reports
+ *   Export & Reports   — full width (Upcoming & Recurring accessed via header notification)
  *
  * Each chart sits in its own compact card (rendered by VisualizationGrid,
  * which provides the original clickable card styling); there is no
@@ -49,11 +48,8 @@ export function DashboardTab() {
       {/* Top 20 Outflow | Top 20 Spendings */}
       <InformationGrid />
 
-      {/* Upcoming & recurring | Export & reports */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
-        <RecurringSection />
-        <ExportReports />
-      </div>
+      {/* Export & reports — full width (upcoming accessed via header notification) */}
+      <ExportReports />
     </div>
   );
 }
