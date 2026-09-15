@@ -15,10 +15,8 @@
  *  • Everything is tenant-scoped by business_id; RLS enforces isolation
  *    server-side, this module only ever queries with an explicit
  *    business_id.
- *  • Pull/import and push/upsert are idempotent; deletes are diffed
- *    (rows removed locally are deleted server-side on next push).
- *  • Every function degrades gracefully when Supabase is not configured
- *    or the network fails — the app keeps working locally.
+ *  • Reads use one database snapshot. Writes commit only changed rows with
+ *    optimistic conflict checks. Failures reach callers; no silent fallback.
  */
 
 import type {
@@ -34,7 +32,7 @@ import type {
 } from "@/data/model/types";
 import type { CurrencyCode } from "./currency";
 import { getSupabaseBrowserClient } from "./supabase";
-import type { SupabaseClient } from "@supabase/supabase-js";
+
 
 // ------------------------------------------------------------
 // Public types
@@ -57,6 +55,8 @@ export type CloudSyncState = "idle" | "syncing" | "synced" | "offline" | "error"
 
 /** Full business-scoped state exchanged with the cloud. */
 export interface CloudState {
+  /** Exact cloud rows for optimistic concurrency; never restored from cache. */
+  cloudRows?: Record<string, Row[]>;
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
@@ -198,7 +198,7 @@ function str(value: unknown): string | undefined {
 }
 
 /** A raw Postgres row (snake_case columns). */
-type Row = Record<string, unknown>;
+export type Row = Record<string, unknown>;
 
 const s = (v: unknown, fallback = ""): string =>
   typeof v === "string" ? v : fallback;
@@ -378,7 +378,7 @@ const plannedToRow = (businessId: string, p: PlannedTransaction): Row => ({
   currency: p.currency ?? null,
 });
 
-const activityToRow = (businessId: string, a: Activity, actorUserId?: string | null): Row => ({
+const activityToRow = (businessId: string, a: Activity): Row => ({
   ...baseCols(businessId, a.id),
   title: a.title,
   date: a.date,
@@ -387,7 +387,6 @@ const activityToRow = (businessId: string, a: Activity, actorUserId?: string | n
   due_date: a.dueDate ?? null,
   priority: a.priority ?? null,
   completed_at: a.completedAt ?? null,
-  actor_user_id: actorUserId,
 });
 
 const notificationToRow = (businessId: string, n: Notification): Row => ({
@@ -405,230 +404,104 @@ const notificationToRow = (businessId: string, n: Notification): Row => ({
 // Pull (cloud → app)
 // ------------------------------------------------------------
 
-/**
- * Load the full business-scoped state for a tenant. Returns null when
- * Supabase is not configured, nobody is signed in, or any query fails —
- * callers then simply keep local state (graceful offline behavior).
- */
-export async function pullBusinessState(
-  businessId: string
-): Promise<CloudState | null> {
+/** One MVCC database snapshot, with exact originals for conflict checks. */
+export async function pullBusinessState(businessId: string): Promise<CloudState> {
   const client = getSupabaseBrowserClient();
-  if (!client) return null;
-  try {
-    const [
-      accounts,
-      categories,
-      transactions,
-      budgets,
-      goals,
-      planned,
-      activities,
-      notifications,
-      settings,
-    ] = await Promise.all([
-      client.from("accounts").select("*").eq("business_id", businessId),
-      client.from("categories").select("*").eq("business_id", businessId),
-      client
-        .from("transactions")
-        .select("*")
-        .eq("business_id", businessId)
-        .order("date", { ascending: false }),
-      client.from("budgets").select("*").eq("business_id", businessId),
-      client.from("goals").select("*").eq("business_id", businessId),
-      client
-        .from("planned_transactions")
-        .select("*")
-        .eq("business_id", businessId)
-        .order("date"),
-      client
-        .from("activities")
-        .select("*")
-        .eq("business_id", businessId)
-        .order("date", { ascending: false }),
-      client.from("notifications").select("*").eq("business_id", businessId),
-      client
-        .from("app_settings")
-        .select("key, value")
-        .eq("business_id", businessId),
-    ]);
-
-    const responses = [
-      accounts,
-      categories,
-      transactions,
-      budgets,
-      goals,
-      planned,
-      activities,
-      notifications,
-      settings,
-    ];
-    if (responses.some((r) => r.error)) return null;
-
-    const settingRows = (settings.data ?? []) as Row[];
-    const setting = (key: string): unknown =>
-      settingRows.find((r) => String(r.key) === key)?.value;
-
-    const todosValue = setting("todos");
-    const yearValue = setting("year");
-    const currencyValue = setting("currency");
-
-    return {
-      accounts: ((accounts.data ?? []) as Row[]).map(accountFromRow),
-      categories: ((categories.data ?? []) as Row[]).map(categoryFromRow),
-      transactions: ((transactions.data ?? []) as Row[]).map(transactionFromRow),
-      budgets: ((budgets.data ?? []) as Row[]).map(budgetFromRow),
-      goals: ((goals.data ?? []) as Row[]).map(goalFromRow),
-      plannedTransactions: ((planned.data ?? []) as Row[]).map(plannedFromRow),
-      activities: ((activities.data ?? []) as Row[]).map(activityFromRow),
-      notifications: ((notifications.data ?? []) as Row[]).map(
-        notificationFromRow
-      ),
-      todos: Array.isArray(todosValue) ? (todosValue as TodoRow[]) : [],
-      selectedYear: typeof yearValue === "number" ? yearValue : 0,
-      currency:
-        typeof currencyValue === "string"
-          ? (currencyValue as CurrencyCode)
-          : "USD",
-    };
-  } catch {
-    return null;
+  if (!client) throw new Error("Supabase is not configured.");
+  const { data, error } = await client.rpc("read_business_state", { p_business_id: businessId });
+  if (error) throw new Error(`Could not load the workspace (${error.code}).`);
+  if (!data || typeof data !== "object") throw new Error("Invalid workspace response.");
+  const rows = data as Record<string, Row[]>;
+  for (const table of CLOUD_TABLES) {
+    if (!Array.isArray(rows[table])) throw new Error(`Missing workspace table: ${table}`);
+    if (rows[table].some((row) => row.business_id !== businessId)) {
+      throw new Error("Workspace response contains another business.");
+    }
   }
+  const setting = (key: string) => rows.app_settings.find((r) => r.key === key)?.value;
+  return {
+    accounts: rows.accounts.map(accountFromRow),
+    categories: rows.categories.map(categoryFromRow),
+    transactions: rows.transactions.map(transactionFromRow).sort((a, b) => b.date.localeCompare(a.date)),
+    budgets: rows.budgets.map(budgetFromRow),
+    goals: rows.goals.map(goalFromRow),
+    plannedTransactions: rows.planned_transactions.map(plannedFromRow).sort((a, b) => a.date.localeCompare(b.date)),
+    activities: rows.activities.map(activityFromRow),
+    notifications: rows.notifications.map(notificationFromRow),
+    todos: Array.isArray(setting("todos")) ? setting("todos") as TodoRow[] : [],
+    selectedYear: typeof setting("year") === "number" ? setting("year") as number : 0,
+    currency: typeof setting("currency") === "string" ? setting("currency") as CurrencyCode : "USD",
+    cloudRows: rows,
+  };
 }
 
-// ------------------------------------------------------------
-// Push (app → cloud)
-// ------------------------------------------------------------
+export const CLOUD_TABLES = ["accounts", "categories", "transactions", "budgets", "goals",
+  "planned_transactions", "activities", "notifications", "app_settings"] as const;
 
-/**
- * Delete cloud rows that no longer exist locally (local removals are
- * synced as a diff). Never wipes a table when the local set is empty —
- * that would destroy data on a transient empty state.
- */
-async function deleteRemoved(
-  client: SupabaseClient,
-  table: string,
-  businessId: string,
-  keepIds: string[]
-): Promise<void> {
-  if (keepIds.length === 0) return;
-  const list = `(${keepIds.map((id) => `"${id}"`).join(",")})`;
-  await client
-    .from(table)
-    .delete()
-    .eq("business_id", businessId)
-    .not("local_id", "in", list);
+function stateRows(businessId: string, state: CloudState): Record<string, Row[]> {
+  return {
+    accounts: state.accounts.map((a) => accountToRow(businessId, a)),
+    categories: state.categories.map((c) => categoryToRow(businessId, c)),
+    transactions: state.transactions.map((t) => transactionToRow(businessId, t)),
+    budgets: state.budgets.map((b) => budgetToRow(businessId, b)),
+    goals: state.goals.map((g) => goalToRow(businessId, g)),
+    planned_transactions: state.plannedTransactions.map((p) => plannedToRow(businessId, p)),
+    activities: state.activities.map((a) => activityToRow(businessId, a)),
+    notifications: state.notifications.map((n) => notificationToRow(businessId, n)),
+    app_settings: [
+      { business_id: businessId, key: "todos", value: state.todos },
+      { business_id: businessId, key: "year", value: state.selectedYear },
+      { business_id: businessId, key: "currency", value: state.currency },
+    ],
+  };
 }
 
-/**
- * Upsert the full business-scoped state. Idempotent — safe to call after
- * every debounced local change. Returns true when everything succeeded.
- *
- * `actorUserId` is passed in by the caller (resolved once at cloud
- * bootstrap) rather than re-fetched here. `client.auth.getUser()` makes a
- * network round-trip to Supabase Auth to revalidate the JWT — an extra
- * request that was previously awaited on EVERY push before any write left
- * the browser. That round-trip was pure latency on the critical path: it
- * only ever fed a denormalized `actor_user_id` label column, never an
- * authorization decision (RLS enforces access from the request's JWT
- * itself, independent of this value). Skipping it shortens how long a
- * push takes to reach the network, shrinking the window in which a tab
- * close can cut it off — see the flush-on-hide logic in dashboardData.tsx.
- */
+export interface CloudChange { table: string; key: string; before: Row | null; after: Row | null }
+
+/** Compare app values; send the actual database originals as concurrency tokens. */
+export function businessChanges(businessId: string, previous: CloudState, next: CloudState): CloudChange[] {
+  if (!previous.cloudRows) throw new Error("Cloud hydration must complete before saving.");
+  const before = stateRows(businessId, previous), after = stateRows(businessId, next);
+  const changes: CloudChange[] = [];
+  for (const table of CLOUD_TABLES) {
+    const keyField = table === "app_settings" ? "key" : "local_id";
+    const oldRows = new Map(before[table].map((r) => [String(r[keyField]), r]));
+    const newRows = new Map(after[table].map((r) => [String(r[keyField]), r]));
+    for (const key of new Set([...oldRows.keys(), ...newRows.keys()])) {
+      const oldRow = oldRows.get(key), newRow = newRows.get(key);
+      if (JSON.stringify(oldRow) === JSON.stringify(newRow)) continue;
+      const original = previous.cloudRows[table]?.find((r) => r[keyField] === key) ?? null;
+      const fields = newRow ? Object.fromEntries(Object.entries(newRow)
+        .filter(([name]) => name !== "business_id" && name !== keyField)) : null;
+      changes.push({ table, key, before: original, after: fields });
+    }
+  }
+  return changes;
+}
+
+/** One atomic, RLS-authorized commit. Failures reach the save operation. */
 export async function pushBusinessState(
-  businessId: string,
-  state: CloudState,
-  actorUserId: string | null = null
-): Promise<boolean> {
+  businessId: string, state: CloudState, previous: CloudState,
+): Promise<CloudState> {
+  const changes = businessChanges(businessId, previous, state);
+  if (!changes.length) return { ...state, cloudRows: previous.cloudRows };
   const client = getSupabaseBrowserClient();
-  if (!client) return false;
-  try {
-    const upsertOpts = { onConflict: "business_id,local_id" } as const;
-    const results = await Promise.all([
-      client
-        .from("accounts")
-        .upsert(
-          state.accounts.map((a) => accountToRow(businessId, a)),
-          upsertOpts
-        ),
-      client
-        .from("categories")
-        .upsert(
-          state.categories.map((c) => categoryToRow(businessId, c)),
-          upsertOpts
-        ),
-      client
-        .from("transactions")
-        .upsert(
-          state.transactions.map((t) => transactionToRow(businessId, t)),
-          upsertOpts
-        ),
-      client
-        .from("budgets")
-        .upsert(
-          state.budgets.map((b) => budgetToRow(businessId, b)),
-          upsertOpts
-        ),
-      client
-        .from("goals")
-        .upsert(
-          state.goals.map((g) => goalToRow(businessId, g)),
-          upsertOpts
-        ),
-      client
-        .from("planned_transactions")
-        .upsert(
-          state.plannedTransactions.map((p) => plannedToRow(businessId, p)),
-          upsertOpts
-        ),
-      client
-        .from("activities")
-        .upsert(
-          state.activities.map((a) => activityToRow(businessId, a, actorUserId)),
-          upsertOpts
-        ),
-      client
-        .from("notifications")
-        .upsert(
-          state.notifications.map((n) => notificationToRow(businessId, n)),
-          upsertOpts
-        ),
-      client.from("app_settings").upsert(
-        [
-          { business_id: businessId, key: "todos", value: state.todos },
-          { business_id: businessId, key: "year", value: state.selectedYear },
-          { business_id: businessId, key: "currency", value: state.currency },
-        ],
-        { onConflict: "business_id,key" }
-      ),
-    ]);
-
-    if (results.some((r) => r.error)) return false;
-
-    // Sync local removals (row sets that shrank) — best effort.
-    await Promise.all([
-      deleteRemoved(client, "accounts", businessId, state.accounts.map((a) => a.id)),
-      deleteRemoved(client, "categories", businessId, state.categories.map((c) => c.id)),
-      deleteRemoved(client, "transactions", businessId, state.transactions.map((t) => t.id)),
-      deleteRemoved(client, "budgets", businessId, state.budgets.map((b) => b.id)),
-      deleteRemoved(client, "goals", businessId, state.goals.map((g) => g.id)),
-      deleteRemoved(
-        client,
-        "planned_transactions",
-        businessId,
-        state.plannedTransactions.map((p) => p.id)
-      ),
-      deleteRemoved(client, "activities", businessId, state.activities.map((a) => a.id)),
-      deleteRemoved(
-        client,
-        "notifications",
-        businessId,
-        state.notifications.map((n) => n.id)
-      ),
-    ]);
-    return true;
-  } catch {
-    return false;
+  if (!client) throw new Error("Supabase is not configured.");
+  const { data, error } = await client.rpc("apply_business_changes", {
+    p_business_id: businessId, p_changes: changes,
+  });
+  if (error) {
+    if (error.code === "40001") throw new Error("This record changed in another session. Reload before editing it.");
+    throw new Error(`Save was not confirmed (${error.code}). Keep this form open and retry.`);
   }
+  if (!Array.isArray(data) || data.length !== changes.length) throw new Error("Save confirmation was incomplete. Retry.");
+  const rows = { ...previous.cloudRows };
+  for (const result of data as { table: string; key: string; row: Row | null }[]) {
+    const expected = changes.find((c) => c.table === result.table && c.key === result.key);
+    if (!expected || (result.row && result.row.business_id !== businessId)) throw new Error("Invalid save confirmation.");
+    const keyField = result.table === "app_settings" ? "key" : "local_id";
+    rows[result.table] = (rows[result.table] ?? []).filter((r) => r[keyField] !== result.key);
+    if (result.row) rows[result.table].push(result.row);
+  }
+  return { ...state, cloudRows: rows };
 }

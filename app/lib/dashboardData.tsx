@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useMemo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import {
   Account,
   Transaction,
@@ -55,7 +55,6 @@ import { convertAmount, getExchangeRate, type FxRate, type FxStatus } from "@/li
 import {
   fetchBusinessesForUser,
   pullBusinessState,
-  pushBusinessState,
   getActiveBusinessId,
   setActiveBusinessId,
   getCloudOwnerTag,
@@ -66,6 +65,8 @@ import {
   type CloudState,
 } from "@/lib/cloudSync";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
+import { usePathname } from "next/navigation";
+import { CloudSaveQueue } from "./cloudSaveQueue";
 import { checkPlatformAdmin, clearAdminViewing, getAdminViewing } from "@/lib/platformAdmin";
 
 interface DashboardState {
@@ -183,6 +184,8 @@ interface DashboardContextValue extends DashboardState {
   cloudSyncState: CloudSyncState;
 
   // ---- data-entry CRUD ----
+  saveEntry: (tx: Transaction) => Promise<void>;
+  flushCloudChanges: () => Promise<void>;
   updateTransaction: (id: string, patch: Partial<Omit<Transaction, "id">>) => void;
   deleteTransaction: (id: string) => void;
   /**
@@ -231,13 +234,8 @@ export function useDashboardData(): DashboardContextValue {
   return ctx;
 }
 
-const nextId = (prefix: string, existing: string[]) => {
-  let max = 0;
-  for (const id of existing) {
-    const match = /(\d+)$/.exec(id);
-    if (match) max = Math.max(max, Number(match[1]));
-  }
-  return `${prefix}-${max + 1}`;
+const nextId = (prefix: string) => {
+  return `${prefix}-${crypto.randomUUID()}`;
 };
 
 const accountDelta = (transactions: Transaction[], accountId: string) =>
@@ -276,6 +274,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // dataset must never render, even for a frame. The seed dataset remains
   // the starter only for the unconfigured local-only demo mode.
   const cloudEnabled = isSupabaseConfigured();
+  const pathname = usePathname();
+  const workspaceSurface = pathname !== "/login" && pathname !== "/workspaces" && !pathname.startsWith("/admin");
 
   // Deterministic SSR: the first render (server AND client) uses the
   // starter defaults; persisted state is loaded once after mount. This
@@ -301,20 +301,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // ---- multi-tenant cloud session (Supabase) ----
   const [activeBusiness, setActiveBusiness] = useState<BusinessInfo | null>(null);
   const [cloudSyncState, setCloudSyncState] = useState<CloudSyncState>("idle");
-  /** True while the bootstrap pull is in flight (pushes are suppressed). */
-  const cloudBusy = useRef(false);
-  /** Debounce handle for push-after-change. */
-  const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Signed-in user id, resolved once at bootstrap — see pushBusinessState
-   *  in cloudSync.ts for why this replaces a per-push auth.getUser() call. */
-  const actorUserIdRef = useRef<string | null>(null);
-  /** Mirrors `activeBusiness` for use inside stable (mount-once) event
-   *  listeners, which would otherwise close over a stale null/value. */
-  const activeBusinessRef = useRef<BusinessInfo | null>(null);
-  /** Latest full cloud snapshot not yet confirmed pushed, and whether one
-   *  is currently pending — read by the flush-on-hide listeners below. */
-  const pendingCloudStateRef = useRef<CloudState | null>(null);
-  const cloudDirtyRef = useRef(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const saveQueueRef = useRef<CloudSaveQueue | null>(null);
+  const latestStateRef = useRef<CloudState | null>(null);
 
   // Keep the centralized formatter layer in sync with the selection so every
   // legacy formatMoney/formatMoneyFull call site is currency-aware.
@@ -440,7 +429,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // another dataset.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    setAccounts(loadFromStorage("accounts", cloudEnabled ? [] : seedAccounts));
+    if (cloudEnabled) {
+      setHydrated(true);
+      return;
+    }
+    setAccounts(loadFromStorage("accounts", seedAccounts));
     setTransactions(loadFromStorage("transactions", cloudEnabled ? [] : seedTransactions));
     setCategories(loadFromStorage("categories", cloudEnabled ? [] : seedCategories));
     setBudgets(loadFromStorage("budgets", cloudEnabled ? [] : seedBudgets));
@@ -459,19 +452,19 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => { if (hydrated) saveToStorage("accounts", accounts); }, [hydrated, accounts]);
-  useEffect(() => { if (hydrated) saveToStorage("transactions", transactions); }, [hydrated, transactions]);
-  useEffect(() => { if (hydrated) saveToStorage("categories", categories); }, [hydrated, categories]);
-  useEffect(() => { if (hydrated) saveToStorage("budgets", budgets); }, [hydrated, budgets]);
-  useEffect(() => { if (hydrated) saveToStorage("goals", goals); }, [hydrated, goals]);
-  useEffect(() => { if (hydrated) saveToStorage("planned", plannedTransactions); }, [hydrated, plannedTransactions]);
-  useEffect(() => { if (hydrated) saveToStorage("todos", todos); }, [hydrated, todos]);
-  useEffect(() => { if (hydrated) saveToStorage("year", effectiveYear); }, [hydrated, effectiveYear]);
-  useEffect(() => { if (hydrated) saveToStorage("currency", currency); }, [hydrated, currency]);
-  useEffect(() => { if (hydrated) saveToStorage("activities", activities); }, [hydrated, activities]);
-  useEffect(() => { if (hydrated) saveToStorage("selectedDay", selectedDay); }, [hydrated, selectedDay]);
-  useEffect(() => { if (hydrated) saveToStorage("notifications", notifications); }, [hydrated, notifications]);
-  useEffect(() => { if (hydrated) saveToStorage("dashboardFilter", dashboardFilter); }, [hydrated, dashboardFilter]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("accounts", accounts); }, [hydrated, cloudEnabled, cloudReady, accounts]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("transactions", transactions); }, [hydrated, cloudEnabled, cloudReady, transactions]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("categories", categories); }, [hydrated, cloudEnabled, cloudReady, categories]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("budgets", budgets); }, [hydrated, cloudEnabled, cloudReady, budgets]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("goals", goals); }, [hydrated, cloudEnabled, cloudReady, goals]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("planned", plannedTransactions); }, [hydrated, cloudEnabled, cloudReady, plannedTransactions]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("todos", todos); }, [hydrated, cloudEnabled, cloudReady, todos]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("year", effectiveYear); }, [hydrated, cloudEnabled, cloudReady, effectiveYear]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("currency", currency); }, [hydrated, cloudEnabled, cloudReady, currency]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("activities", activities); }, [hydrated, cloudEnabled, cloudReady, activities]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("selectedDay", selectedDay); }, [hydrated, cloudEnabled, cloudReady, selectedDay]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("notifications", notifications); }, [hydrated, cloudEnabled, cloudReady, notifications]);
+  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("dashboardFilter", dashboardFilter); }, [hydrated, cloudEnabled, cloudReady, dashboardFilter]);
 
   // ---- display-currency views (RAW records stay untouched & recoverable) ----
   const displayTransactions = useMemo(
@@ -773,7 +766,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
     const addTransaction = (tx: Omit<Transaction, "id">) => {
     setTransactions((prev) => {
-      const next = [...prev, { ...tx, id: nextId("tx", prev.map((t) => t.id)) }];
+      const next = [...prev, { ...tx, id: nextId("tx") }];
       setAccounts((accs) => recomputeBalances(accs, next));
       setBudgets((bs) => recomputeBudgetActuals(bs, next));
       return next;
@@ -846,19 +839,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addAccount = (data: Omit<Account, "id" | "currentBalance">) => {
-    let newId = "";
-    setAccounts((prev) => {
-      newId = nextId("a", prev.map((a) => a.id));
-      return [
-        ...prev,
-        {
-          id: newId,
-          ...data,
-          currentBalance: data.openingBalance,
-          active: data.active ?? true,
-        },
-      ];
-    });
+    const newId = nextId("a");
+    setAccounts((prev) => [...prev, { id: newId, ...data,
+      currentBalance: data.openingBalance, active: data.active ?? true }]);
     return newId;
   };
 
@@ -871,14 +854,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addCategory = (data: NewEntity<Category>) => {
-    let newId = "";
-    setCategories((prev) => {
-      newId = nextId("c", prev.map((c) => c.id));
-      return [
-        ...prev,
-        { id: newId, ...data },
-      ];
-    });
+    const newId = nextId("c");
+    setCategories((prev) => [...prev, { id: newId, ...data }]);
     return newId;
   };
 
@@ -893,7 +870,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const addBudget = (data: NewEntity<Budget>) => {
     setBudgets((prev) => [
       ...prev,
-      { id: nextId("b", prev.map((b) => b.id)), ...data },
+      { id: nextId("b"), ...data },
     ]);
   };
 
@@ -908,7 +885,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const addGoal = (data: NewEntity<Goal>) => {
     setGoals((prev) => [
       ...prev,
-      { id: nextId("g", prev.map((g) => g.id)), ...data, status: data.status ?? "active" },
+      { id: nextId("g"), ...data, status: data.status ?? "active" },
     ]);
   };
 
@@ -919,7 +896,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const addPlanned = (data: NewEntity<PlannedTransaction>) => {
     setPlannedTransactions((prev) => [
       ...prev,
-      { id: nextId("p", prev.map((p) => p.id)), ...data, status: data.status ?? "pending" },
+      { id: nextId("p"), ...data, status: data.status ?? "pending" },
     ]);
   };
 
@@ -1055,29 +1032,18 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setNotifications([]);
   };
 
-  // ---- multi-tenant cloud bootstrap (Supabase) ----------------------
-  // After hydration: resolve the signed-in user's businesses → activate
-  // the stored one → pull its state from the cloud. Only collections the
-  // cloud actually HAS are imported, so an empty (fresh) business never
-  // wipes local/seed data — the local dataset becomes the starter data
-  // that the debounced push below uploads for the new tenant.
+  // Resolve auth and tenant, then read cloud state before enabling any writes.
   useEffect(() => {
-    if (!hydrated || !isSupabaseConfigured()) return;
-    // Auth / selector / admin surfaces never bootstrap tenant data: there
-    // is no Shell there and no business context to resolve. Sync state
-    // already starts "idle", so nothing needs to be set here.
-    const path = window.location.pathname;
-    if (path === "/login" || path === "/workspaces" || path.startsWith("/admin")) {
-      return;
-    }
+    if (!hydrated || !cloudEnabled || !workspaceSurface) return;
     let cancelled = false;
-    cloudBusy.current = true;
+
     // Deliberate synchronous status flip: "syncing" must be visible the
     // instant the bootstrap starts, before the first await resolves. This
     // is external-system synchronization (Supabase), which React permits;
     // the lint rule cannot see the async boundary, so disable it here only.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCloudSyncState("syncing");
+    setCloudReady(false);
     (async () => {
       try {
         const client = getSupabaseBrowserClient();
@@ -1091,7 +1057,6 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
           window.location.assign("/login");
           return;
         }
-        actorUserIdRef.current = auth.data.user.id;
         const businesses = await fetchBusinessesForUser();
 
         // ---- platform-admin "viewing" context ------------------------
@@ -1174,10 +1139,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
         const cloud = await pullBusinessState(active.id);
         if (cancelled) return;
-        if (!cloud) {
-          setCloudSyncState("offline");
-          return;
-        }
+
 
         // ---- deterministic local-snapshot resolution --------------
         // The local snapshot must never leak into another business's
@@ -1212,141 +1174,97 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         });
         setTodos(cloud.todos);
         setNotifications(cloud.notifications);
-        if (cloud.selectedYear) setSelectedYear(cloud.selectedYear);
+        cloud.selectedYear = cloud.selectedYear || DEFAULT_YEAR;
+        setSelectedYear(cloud.selectedYear);
         if (cloud.currency && CURRENCIES.some((c) => c.code === cloud.currency)) {
           setCurrency(cloud.currency);
         }
         setCloudOwnerTag(active.id);
+        latestStateRef.current = cloud;
+        if (active.role !== "platform-admin") {
+          saveQueueRef.current = new CloudSaveQueue(active.id, cloud, setCloudSyncState);
+        }
+        setCloudReady(true);
         setCloudSyncState("synced");
       } catch {
         if (!cancelled) setCloudSyncState("offline");
-      } finally {
-        cloudBusy.current = false;
       }
     })();
+    const client = getSupabaseBrowserClient();
+    const subscription = client?.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        cancelled = true;
+        saveQueueRef.current?.stop();
+        saveQueueRef.current = null;
+        latestStateRef.current = null;
+        setCloudReady(false);
+        clearTenantLocalData();
+        setCloudOwnerTag(null);
+        resetToStarterState();
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.assign("/login");
+      }
+    });
     return () => {
       cancelled = true;
+      subscription?.data.subscription.unsubscribe();
+      saveQueueRef.current?.stop();
+      saveQueueRef.current = null;
+      latestStateRef.current = null;
     };
-    // Bootstrap runs once per session; every referenced setter is stable.
-  }, [hydrated]);
+    // Context changes remount through full-page navigation; internal tab changes
+    // must not pull over pending edits. Strict Mode cleanup cancels old bootstrap.
+  }, [hydrated, cloudEnabled, workspaceSurface]);
 
-  useEffect(() => {
-    activeBusinessRef.current = activeBusiness;
-  }, [activeBusiness]);
+  useLayoutEffect(() => {
+    const snapshot: CloudState = {
+      accounts, transactions, categories, budgets, goals, plannedTransactions,
+      activities, notifications, todos, selectedYear: effectiveYear, currency,
+    };
+    latestStateRef.current = snapshot;
+    const queue = saveQueueRef.current;
+    if (!cloudReady || !queue || getAdminViewing()) return;
+    queue.observe(snapshot);
+    // Immediate synchronization for other existing CRUD flows. Entry explicitly
+    // awaits the same queue below. A failed write stays pending for retry.
+    void queue.flush().catch(() => { /* queue exposes failure through sync status */ });
+  }, [accounts, transactions, categories, budgets, goals, plannedTransactions,
+    activities, notifications, todos, effectiveYear, currency, cloudReady]);
 
-  /**
-   * Send the given snapshot to the active business now (bypassing the
-   * debounce), marking it no longer pending. Shared by the debounce timer
-   * firing normally and by the flush-on-hide listeners below, so both
-   * paths use the same success/failure handling.
-   */
-  const pushSnapshot = (businessId: string, state: CloudState) => {
-    cloudDirtyRef.current = false;
-    void pushBusinessState(businessId, state, actorUserIdRef.current).then(
-      (ok) => setCloudSyncState(ok ? "synced" : "offline")
-    );
+  const flushCloudChanges = async () => {
+    if (!cloudEnabled || activeBusiness?.role === "platform-admin") return;
+    const queue = saveQueueRef.current;
+    if (!cloudReady || !queue) throw new Error("Workspace is not loaded. Reload before saving.");
+    await queue.flush();
   };
 
-  // ---- debounced push of local changes to the active business -------
-  //
-  // Root cause of the "data vanishes after closing the tab" bug: this push
-  // was purely time-debounced (setTimeout, 800ms) with nothing to flush it
-  // early. A record entered and then followed by a tab close well inside
-  // that window was written to localStorage (synchronous, effects above)
-  // and to React state, but the setTimeout callback that would have sent
-  // it to Supabase never got to run — the tab was gone before it fired.
-  // On the next visit, the bootstrap effect pulls from Supabase (still
-  // missing the record) and — correctly, since cloud is this app's single
-  // source of truth per business — replaces local state with it, so the
-  // never-synced entry disappears. Nothing was wrong with the pull, the
-  // tenant resolution, or the row mapping; the write simply never left
-  // the browser.
-  //
-  // Fix: keep the debounce (it still absorbs rapid-fire edits into one
-  // write instead of one per keystroke), but also track the latest
-  // not-yet-pushed snapshot in a ref, and flush it immediately — outside
-  // the 800ms wait — the moment the tab is hidden or unloaded. Paired
-  // with the `keepalive` fetch in supabase.ts (which keeps that flush's
-  // network request alive after the tab is torn down), this closes the
-  // window instead of just narrowing it.
+  const saveEntry = async (tx: Transaction) => {
+    const queue = saveQueueRef.current;
+    if (cloudEnabled && (!cloudReady || !queue || getAdminViewing())) {
+      throw new Error("Workspace is not ready for saving. Reload and try again.");
+    }
+    const current = latestStateRef.current;
+    if (!current) throw new Error("Workspace is still loading.");
+    const nextTransactions = current.transactions.some((t) => t.id === tx.id)
+      ? current.transactions.map((t) => t.id === tx.id ? tx : t)
+      : [...current.transactions, tx];
+    const next = { ...current, transactions: nextTransactions,
+      accounts: recomputeBalances(current.accounts, nextTransactions),
+      budgets: recomputeBudgetActuals(current.budgets, nextTransactions) };
+    // Keep the existing immediate preview, but Entry stays open until commit.
+    // Stable IDs make retry safe after a timeout or a lost acknowledgement.
+    latestStateRef.current = next;
+    queue?.observe(next);
+    setTransactions(next.transactions);
+    setAccounts(next.accounts);
+    setBudgets(next.budgets);
+    await queue?.flush();
+  };
+
   useEffect(() => {
-    if (!hydrated || !activeBusiness || !isSupabaseConfigured()) return;
-    if (cloudBusy.current) return; // don't echo the bootstrap pull back
-    // Platform admin inspecting a tenant: migration 007 grants READ-ONLY
-    // access (no admin write policies). Local state must never be pushed
-    // into a business the admin is merely viewing.
-    if (getAdminViewing()) return;
-
-    const snapshot: CloudState = {
-      accounts,
-      transactions,
-      categories,
-      budgets,
-      goals,
-      plannedTransactions,
-      activities,
-      notifications,
-      todos,
-      selectedYear: effectiveYear,
-      currency,
-    };
-    pendingCloudStateRef.current = snapshot;
-    cloudDirtyRef.current = true;
-
-    if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
-    cloudSaveTimer.current = setTimeout(() => {
-      pushSnapshot(activeBusiness.id, snapshot);
-    }, 800);
-    return () => {
-      if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
-    };
-  }, [
-    hydrated,
-    activeBusiness,
-    accounts,
-    transactions,
-    categories,
-    budgets,
-    goals,
-    plannedTransactions,
-    activities,
-    notifications,
-    todos,
-    effectiveYear,
-    currency,
-  ]);
-
-  // ---- flush the pending push immediately when the tab is hidden/closed ----
-  // Mount-once listeners (refs, not closed-over state, carry the live
-  // values — see activeBusinessRef/pendingCloudStateRef/cloudDirtyRef
-  // above). `visibilitychange` fires reliably on tab close, app switch,
-  // and mobile backgrounding; `pagehide` covers in-tab navigation/reload.
-  // Both call the same flush — calling it twice is harmless, since the
-  // second call finds `cloudDirtyRef.current` already false.
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-    const flush = () => {
-      if (!cloudDirtyRef.current) return;
-      const business = activeBusinessRef.current;
-      const snapshot = pendingCloudStateRef.current;
-      if (!business || !snapshot) return;
-      if (getAdminViewing()) return;
-      if (cloudSaveTimer.current) {
-        clearTimeout(cloudSaveTimer.current);
-        cloudSaveTimer.current = null;
-      }
-      pushSnapshot(business.id, snapshot);
-    };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") flush();
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      window.removeEventListener("pagehide", flush);
-    };
-    // Mount-once: reads current values through refs, not closure state.
+    const retry = () => { void saveQueueRef.current?.flush().catch(() => {}); };
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
   }, []);
 
     const value: DashboardContextValue = {
@@ -1419,6 +1337,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     clearNotifications,
     updateGoal,
     updateAccountBalance,
+    saveEntry,
+    flushCloudChanges,
     addTransaction,
     updateTransaction,
     deleteTransaction,

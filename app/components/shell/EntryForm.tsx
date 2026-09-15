@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDashboardData } from "@/lib/dashboardData";
 import type { Transaction, TransactionType, CategoryGroup, AccountType } from "@/data/model/types";
@@ -83,11 +83,18 @@ export function EntryForm({
     accounts,
     categories,
     currency,
-    addTransaction,
-    updateTransaction,
+    saveEntry,
     addAccount,
     addCategory,
   } = useDashboardData();
+
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const entryIdRef = useRef(editTx?.id ?? null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const closeForm = useCallback(() => {
+    if (!savingRef.current) onClose();
+  }, [onClose]);
 
   const activeCurrency = getCurrency(currency);
   const amountSymbol = activeCurrency.symbol;
@@ -155,7 +162,7 @@ export function EntryForm({
         } else if (showCategoryDialog) {
           setShowCategoryDialog(false);
         } else {
-          onClose();
+          closeForm();
         }
       }
     };
@@ -166,7 +173,7 @@ export function EntryForm({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose, showAccountDialog, showCategoryDialog]);
+  }, [closeForm, showAccountDialog, showCategoryDialog]);
 
   const catOptions = useMemo(
     () =>
@@ -198,8 +205,12 @@ export function EntryForm({
     !!categoryId &&
     (txType !== "transfer" || (!!toAccountId && toAccountId !== accountId));
 
-  const save = () => {
-    if (!valid) return;
+  const save = async () => {
+    if (!valid || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    entryIdRef.current ??= `tx-${crypto.randomUUID()}`;
     const payload = {
       date,
       accountId,
@@ -212,9 +223,16 @@ export function EntryForm({
       notes: notes.trim() ? notes.trim() : undefined,
       toAccountId: txType === "transfer" ? toAccountId : undefined,
     };
-    if (editTx) updateTransaction(editTx.id, payload);
-    else addTransaction(payload);
-    onClose();
+    try {
+      await saveEntry({ ...editTx, ...payload, id: entryIdRef.current });
+      savingRef.current = false;
+      closeForm();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Save was not confirmed. Please retry.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   return createPortal(
@@ -225,7 +243,7 @@ export function EntryForm({
         aria-modal="true"
         aria-label={`${editTx ? "Edit" : "Add"} ${kind.label}`}
         onClick={(e) => {
-          if (e.target === e.currentTarget) onClose();
+          if (e.target === e.currentTarget) closeForm();
         }}
       >
         <div
@@ -244,7 +262,7 @@ export function EntryForm({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={closeForm}
               aria-label="Close form"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-text transition-colors hover:bg-card hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60"
             >
@@ -253,7 +271,7 @@ export function EntryForm({
           </header>
 
           {/* Scrollable form body */}
-          <div className="modal-body px-4 py-4 md:px-5">
+          <fieldset disabled={saving} className="modal-body min-w-0 px-4 py-4 md:px-5">
             {/* Amount + date */}
             <div className="flex gap-2">
               <label className="min-w-0 flex-1">
@@ -435,14 +453,15 @@ export function EntryForm({
                 {txType === "transfer" ? " — pick two different accounts for transfers." : "."}
               </p>
             ) : null}
-          </div>
+          </fieldset>
 
+          {saveError ? <p role="alert" className="px-4 py-2 text-xs text-red-600">{saveError}</p> : null}
           {/* Pinned action footer */}
           <footer className="modal-footer">
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={closeForm}
                 className="h-10 rounded-xl border border-border bg-card px-4 text-xs font-medium text-secondary-text transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-blue/60"
               >
                 Cancel
@@ -450,10 +469,10 @@ export function EntryForm({
               <button
                 type="button"
                 onClick={save}
-                disabled={!valid}
+                disabled={!valid || saving}
                 className="h-10 flex-1 rounded-xl bg-blue text-xs font-semibold text-white transition-colors hover:bg-blue/90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-blue/60"
               >
-                {editTx ? "Save changes" : `Add ${kind.label.toLowerCase()}`}
+                {saving ? "Saving…" : editTx ? "Save changes" : `Add ${kind.label.toLowerCase()}`}
               </button>
             </div>
           </footer>

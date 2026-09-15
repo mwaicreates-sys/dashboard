@@ -1,0 +1,13 @@
+
+> budgeting-system@0.1.0 test:persistence
+> vitest run
+
+
+ RUN  v4.1.11 C:/Users/Gee FX/Desktop/Mwai Creations/Projects/Client Works/Budgeting System
+
+
+ Test Files  2 passed (2)
+      Tests  18 passed (18)
+   Start at  20:30:54
+   Duration  25.19s (transform 1.74s, setup 0ms, import 3.60s, tests 25.93s, environment 5.99s)
+

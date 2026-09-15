@@ -1,0 +1,52 @@
+
+> budgeting-system@0.1.0 build
+> next build
+
+▲ Next.js 16.3.2 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.ts took 116ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.6s
+  Running TypeScript ...
+  Finished TypeScript in 10.8s ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/25) ...
+  Generating static pages using 7 workers (6/25) 
+  Generating static pages using 7 workers (12/25) 
+  Generating static pages using 7 workers (18/25) 
+✓ Generating static pages using 7 workers (25/25) in 2.7s
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /admin
+├ ○ /admin/activity
+├ ○ /admin/businesses
+├ ƒ /admin/businesses/[id]
+├ ○ /admin/profile
+├ ○ /admin/settings
+├ ○ /admin/users
+├ ƒ /api/admin/transfer-ownership
+├ ƒ /api/auth/activate
+├ ƒ /api/demo/seed
+├ ƒ /auth/callback
+├ ○ /dashboard
+├ ○ /debts
+├ ○ /goals
+├ ○ /growth
+├ ○ /income
+├ ○ /investments
+├ ○ /login
+├ ○ /outflow
+├ ○ /savings
+├ ○ /weeks
+└ ○ /workspaces
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

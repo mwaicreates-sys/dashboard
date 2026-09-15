@@ -1,0 +1,884 @@
+[
+  {
+    "table_name": "accounts",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "organization_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "name",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "type",
+    "udt_name": "account_type",
+    "is_nullable": "NO",
+    "column_default": "'bank'::account_type"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "institution",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "currency",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "'KES'::text"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "opening_balance",
+    "udt_name": "numeric",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "current_balance",
+    "udt_name": "numeric",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "is_active",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "accounts",
+    "column_name": "active",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "true"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "title",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "date",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "notes",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "status",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "'pending'::text"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "due_date",
+    "udt_name": "date",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "priority",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "completed_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "activities",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "activities",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "app_settings",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "app_settings",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "app_settings",
+    "column_name": "key",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "app_settings",
+    "column_name": "value",
+    "udt_name": "jsonb",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "app_settings",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "app_settings",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "organization_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "category_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "name",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "amount",
+    "udt_name": "numeric",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "period_start",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "period_end",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "notes",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "created_by",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "category_local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "period_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "month",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "planned_amount",
+    "udt_name": "float8",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "budgets",
+    "column_name": "actual_amount",
+    "udt_name": "float8",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "categories",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "categories",
+    "column_name": "organization_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "name",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "type",
+    "udt_name": "transaction_type",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "icon",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "color",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "is_system",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "false"
+  },
+  {
+    "table_name": "categories",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "categories",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "category_group",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "parent_local_id",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "categories",
+    "column_name": "parent_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "goals",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "goals",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "goals",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "goals",
+    "column_name": "name",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "goals",
+    "column_name": "target_amount",
+    "udt_name": "float8",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "goals",
+    "column_name": "current_amount",
+    "udt_name": "float8",
+    "is_nullable": "NO",
+    "column_default": "0"
+  },
+  {
+    "table_name": "goals",
+    "column_name": "target_date",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "goals",
+    "column_name": "status",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "'active'::text"
+  },
+  {
+    "table_name": "goals",
+    "column_name": "currency",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "goals",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "goals",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "title",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "message",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "''::text"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "type",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "status",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "'unread'::text"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "date",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "''::text"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "action_label",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "action_href",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "notifications",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "date",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "account_local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "account_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "to_account_local_id",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "to_account_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "category_local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "category_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "description",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "''::text"
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "amount",
+    "udt_name": "float8",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "type",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "status",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "'pending'::text"
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "recurrence",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "currency",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "planned_transactions",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": "gen_random_uuid()"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "organization_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "account_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "category_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "type",
+    "udt_name": "transaction_type",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "amount",
+    "udt_name": "numeric",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "description",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "transaction_date",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": "CURRENT_DATE"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "notes",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "is_recurring",
+    "udt_name": "bool",
+    "is_nullable": "NO",
+    "column_default": "false"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "created_by",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "created_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "updated_at",
+    "udt_name": "timestamptz",
+    "is_nullable": "NO",
+    "column_default": "now()"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "business_id",
+    "udt_name": "uuid",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "date",
+    "udt_name": "date",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "account_local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "to_account_local_id",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "to_account_id",
+    "udt_name": "uuid",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "category_local_id",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "planned_local_id",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "status",
+    "udt_name": "text",
+    "is_nullable": "NO",
+    "column_default": "'cleared'::text"
+  },
+  {
+    "table_name": "transactions",
+    "column_name": "currency",
+    "udt_name": "text",
+    "is_nullable": "YES",
+    "column_default": null
+  }
+]

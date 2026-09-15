@@ -1,0 +1,33 @@
+
+> budgeting-system@0.1.0 lint
+> eslint
+
+
+C:\Users\Gee FX\Desktop\Mwai Creations\Projects\Client Works\Budgeting System\.kilo\worktrees\bramble-protest\verify-006-status.mjs
+  29:123  warning  'applied' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Gee FX\Desktop\Mwai Creations\Projects\Client Works\Budgeting System\.kilo\worktrees\bramble-protest\verify-final.mjs
+   58:16  warning  'phase1_connection_and_schema' is defined but never used  @typescript-eslint/no-unused-vars
+   93:16  warning  'phase2_auth_bootstrap' is defined but never used         @typescript-eslint/no-unused-vars
+  144:16  warning  'phase3_rls_ownerA' is defined but never used             @typescript-eslint/no-unused-vars
+  219:16  warning  'phase4_sync_roundtrip' is defined but never used         @typescript-eslint/no-unused-vars
+  312:16  warning  'phase5_sync_mutations' is defined but never used         @typescript-eslint/no-unused-vars
+
+C:\Users\Gee FX\Desktop\Mwai Creations\Projects\Client Works\Budgeting System\app\admin\settings\page.tsx
+  55:5  warning  Do not use `window.location.assign()` to navigate to internal Next.js pages. Use `redirect()` in the render phase, or `useRouter().push()` in Client Components' event handlers instead. See: https://nextjs.org/docs/messages/no-location-assign-relative-destination  @next/next/no-location-assign-relative-destination
+
+C:\Users\Gee FX\Desktop\Mwai Creations\Projects\Client Works\Budgeting System\app\admin\ui.tsx
+  172:9  warning  'd' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Gee FX\Desktop\Mwai Creations\Projects\Client Works\Budgeting System\verify-006-status.mjs
+  29:123  warning  'applied' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Gee FX\Desktop\Mwai Creations\Projects\Client Works\Budgeting System\verify-final.mjs
+   58:16  warning  'phase1_connection_and_schema' is defined but never used  @typescript-eslint/no-unused-vars
+   93:16  warning  'phase2_auth_bootstrap' is defined but never used         @typescript-eslint/no-unused-vars
+  144:16  warning  'phase3_rls_ownerA' is defined but never used             @typescript-eslint/no-unused-vars
+  219:16  warning  'phase4_sync_roundtrip' is defined but never used         @typescript-eslint/no-unused-vars
+  312:16  warning  'phase5_sync_mutations' is defined but never used         @typescript-eslint/no-unused-vars
+
+✖ 14 problems (0 errors, 14 warnings)
+

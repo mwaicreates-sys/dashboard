@@ -33,12 +33,12 @@ const SYNC_COPY: Record<string, SyncCopy> = {
   idle: { dot: "bg-muted-text/60", text: "Sign in to sync this business to the cloud." },
   syncing: { dot: "animate-pulse bg-blue", text: "Updating your business workspace…" },
   synced: { dot: "bg-green", text: "All changes saved to your business workspace." },
-  offline: { dot: "bg-orange", text: "Saved on this device — will sync when reconnected." },
-  error: { dot: "bg-orange", text: "Cloud connection problem — data stays safe locally." },
+  offline: { dot: "bg-orange", text: "Cloud save is not confirmed. Reconnect and retry." },
+  error: { dot: "bg-orange", text: "Cloud save failed. Keep this workspace open and retry." },
 };
 
 export function CloudAccountCard() {
-  const { activeBusiness, cloudSyncState } = useDashboardData();
+  const { activeBusiness, cloudSyncState, flushCloudChanges } = useDashboardData();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,8 +101,13 @@ export function CloudAccountCard() {
   };
 
   const signOut = async () => {
+    try { await flushCloudChanges(); } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Save failed. Please retry.");
+      return;
+    }
     const client = getSupabaseBrowserClient();
-    await client?.auth.signOut();
+    const result = await client?.auth.signOut();
+    if (result?.error) { setMessage(result.error.message); return; }
     // Tenant isolation: this business's cached data must never remain on
     // the device for the next visitor/session. Storage falls back to the
     // designed starter dataset after the wipe.
@@ -116,8 +121,12 @@ export function CloudAccountCard() {
     window.location.assign("/login");
   };
 
-  const switchBusiness = (id: string) => {
+  const switchBusiness = async (id: string) => {
     if (id === activeBusiness?.id) return;
+    try { await flushCloudChanges(); } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Save failed. Please retry.");
+      return;
+    }
     setActiveBusinessId(id);
     // Wipe the previous business's cached snapshot BEFORE the reload so no
     // foreign data is ever rendered in — or pushed into — the new context.
@@ -126,6 +135,16 @@ export function CloudAccountCard() {
     clearTenantLocalData();
     setCloudOwnerTag(null);
     window.location.reload();
+  };
+
+  const openWorkspaceSelector = async () => {
+    try { await flushCloudChanges(); } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Save failed. Please retry.");
+      return;
+    }
+    // A fresh provider must resolve the next tenant after selection.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/workspaces");
   };
 
   return (
@@ -164,6 +183,7 @@ export function CloudAccountCard() {
 
           <Link
             href="/workspaces"
+            onClick={(event) => { event.preventDefault(); void openWorkspaceSelector(); }}
             className="mt-2 block text-center text-[10px] font-medium text-muted-text transition-colors hover:text-primary-text"
           >
             Open workspace selector
@@ -224,12 +244,6 @@ export function CloudAccountCard() {
             </label>
           </div>
 
-          {message ? (
-            <p role="alert" className="mt-2 text-[11px] font-medium text-secondary-text">
-              {message}
-            </p>
-          ) : null}
-
           <button
             type="button"
             onClick={() => void submit()}
@@ -240,6 +254,11 @@ export function CloudAccountCard() {
           </button>
         </>
       )}
+      {message ? (
+        <p role="alert" className="mt-2 text-[11px] font-medium text-secondary-text">
+          {message}
+        </p>
+      ) : null}
     </section>
   );
 }
