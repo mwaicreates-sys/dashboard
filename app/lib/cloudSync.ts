@@ -524,17 +524,26 @@ async function deleteRemoved(
 /**
  * Upsert the full business-scoped state. Idempotent — safe to call after
  * every debounced local change. Returns true when everything succeeded.
+ *
+ * `actorUserId` is passed in by the caller (resolved once at cloud
+ * bootstrap) rather than re-fetched here. `client.auth.getUser()` makes a
+ * network round-trip to Supabase Auth to revalidate the JWT — an extra
+ * request that was previously awaited on EVERY push before any write left
+ * the browser. That round-trip was pure latency on the critical path: it
+ * only ever fed a denormalized `actor_user_id` label column, never an
+ * authorization decision (RLS enforces access from the request's JWT
+ * itself, independent of this value). Skipping it shortens how long a
+ * push takes to reach the network, shrinking the window in which a tab
+ * close can cut it off — see the flush-on-hide logic in dashboardData.tsx.
  */
 export async function pushBusinessState(
   businessId: string,
-  state: CloudState
+  state: CloudState,
+  actorUserId: string | null = null
 ): Promise<boolean> {
   const client = getSupabaseBrowserClient();
   if (!client) return false;
   try {
-    const { data: auth } = await client.auth.getUser();
-    const actorUserId = auth?.user?.id || null;
-    
     const upsertOpts = { onConflict: "business_id,local_id" } as const;
     const results = await Promise.all([
       client

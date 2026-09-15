@@ -63,6 +63,7 @@ import {
   clearTenantLocalData,
   type BusinessInfo,
   type CloudSyncState,
+  type CloudState,
 } from "@/lib/cloudSync";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
 import { checkPlatformAdmin, clearAdminViewing, getAdminViewing } from "@/lib/platformAdmin";
@@ -304,6 +305,16 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const cloudBusy = useRef(false);
   /** Debounce handle for push-after-change. */
   const cloudSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Signed-in user id, resolved once at bootstrap — see pushBusinessState
+   *  in cloudSync.ts for why this replaces a per-push auth.getUser() call. */
+  const actorUserIdRef = useRef<string | null>(null);
+  /** Mirrors `activeBusiness` for use inside stable (mount-once) event
+   *  listeners, which would otherwise close over a stale null/value. */
+  const activeBusinessRef = useRef<BusinessInfo | null>(null);
+  /** Latest full cloud snapshot not yet confirmed pushed, and whether one
+   *  is currently pending — read by the flush-on-hide listeners below. */
+  const pendingCloudStateRef = useRef<CloudState | null>(null);
+  const cloudDirtyRef = useRef(false);
 
   // Keep the centralized formatter layer in sync with the selection so every
   // legacy formatMoney/formatMoneyFull call site is currency-aware.
@@ -1080,6 +1091,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
           window.location.assign("/login");
           return;
         }
+        actorUserIdRef.current = auth.data.user.id;
         const businesses = await fetchBusinessesForUser();
 
         // ---- platform-admin "viewing" context ------------------------
@@ -1218,7 +1230,45 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     // Bootstrap runs once per session; every referenced setter is stable.
   }, [hydrated]);
 
+  useEffect(() => {
+    activeBusinessRef.current = activeBusiness;
+  }, [activeBusiness]);
+
+  /**
+   * Send the given snapshot to the active business now (bypassing the
+   * debounce), marking it no longer pending. Shared by the debounce timer
+   * firing normally and by the flush-on-hide listeners below, so both
+   * paths use the same success/failure handling.
+   */
+  const pushSnapshot = (businessId: string, state: CloudState) => {
+    cloudDirtyRef.current = false;
+    void pushBusinessState(businessId, state, actorUserIdRef.current).then(
+      (ok) => setCloudSyncState(ok ? "synced" : "offline")
+    );
+  };
+
   // ---- debounced push of local changes to the active business -------
+  //
+  // Root cause of the "data vanishes after closing the tab" bug: this push
+  // was purely time-debounced (setTimeout, 800ms) with nothing to flush it
+  // early. A record entered and then followed by a tab close well inside
+  // that window was written to localStorage (synchronous, effects above)
+  // and to React state, but the setTimeout callback that would have sent
+  // it to Supabase never got to run — the tab was gone before it fired.
+  // On the next visit, the bootstrap effect pulls from Supabase (still
+  // missing the record) and — correctly, since cloud is this app's single
+  // source of truth per business — replaces local state with it, so the
+  // never-synced entry disappears. Nothing was wrong with the pull, the
+  // tenant resolution, or the row mapping; the write simply never left
+  // the browser.
+  //
+  // Fix: keep the debounce (it still absorbs rapid-fire edits into one
+  // write instead of one per keystroke), but also track the latest
+  // not-yet-pushed snapshot in a ref, and flush it immediately — outside
+  // the 800ms wait — the moment the tab is hidden or unloaded. Paired
+  // with the `keepalive` fetch in supabase.ts (which keeps that flush's
+  // network request alive after the tab is torn down), this closes the
+  // window instead of just narrowing it.
   useEffect(() => {
     if (!hydrated || !activeBusiness || !isSupabaseConfigured()) return;
     if (cloudBusy.current) return; // don't echo the bootstrap pull back
@@ -1226,21 +1276,26 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     // access (no admin write policies). Local state must never be pushed
     // into a business the admin is merely viewing.
     if (getAdminViewing()) return;
+
+    const snapshot: CloudState = {
+      accounts,
+      transactions,
+      categories,
+      budgets,
+      goals,
+      plannedTransactions,
+      activities,
+      notifications,
+      todos,
+      selectedYear: effectiveYear,
+      currency,
+    };
+    pendingCloudStateRef.current = snapshot;
+    cloudDirtyRef.current = true;
+
     if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
     cloudSaveTimer.current = setTimeout(() => {
-      void pushBusinessState(activeBusiness.id, {
-        accounts,
-        transactions,
-        categories,
-        budgets,
-        goals,
-        plannedTransactions,
-        activities,
-        notifications,
-        todos,
-        selectedYear: effectiveYear,
-        currency,
-      }).then((ok) => setCloudSyncState(ok ? "synced" : "offline"));
+      pushSnapshot(activeBusiness.id, snapshot);
     }, 800);
     return () => {
       if (cloudSaveTimer.current) clearTimeout(cloudSaveTimer.current);
@@ -1260,6 +1315,39 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     effectiveYear,
     currency,
   ]);
+
+  // ---- flush the pending push immediately when the tab is hidden/closed ----
+  // Mount-once listeners (refs, not closed-over state, carry the live
+  // values — see activeBusinessRef/pendingCloudStateRef/cloudDirtyRef
+  // above). `visibilitychange` fires reliably on tab close, app switch,
+  // and mobile backgrounding; `pagehide` covers in-tab navigation/reload.
+  // Both call the same flush — calling it twice is harmless, since the
+  // second call finds `cloudDirtyRef.current` already false.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const flush = () => {
+      if (!cloudDirtyRef.current) return;
+      const business = activeBusinessRef.current;
+      const snapshot = pendingCloudStateRef.current;
+      if (!business || !snapshot) return;
+      if (getAdminViewing()) return;
+      if (cloudSaveTimer.current) {
+        clearTimeout(cloudSaveTimer.current);
+        cloudSaveTimer.current = null;
+      }
+      pushSnapshot(business.id, snapshot);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", flush);
+    };
+    // Mount-once: reads current values through refs, not closure state.
+  }, []);
 
     const value: DashboardContextValue = {
     accounts,
