@@ -2,12 +2,13 @@
 
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyFull } from "@/lib/currency";
+import { isDebtAccount } from "@/lib/calculations";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function DebtsDetails() {
   const { accounts, displayAccounts, displayTransactions, selectedPeriod, progress } = useDashboardData();
 
-  const debtAccounts = displayAccounts.filter((a) => a.type === "credit" || a.type === "loan");
+  const debtAccounts = displayAccounts.filter((a) => isDebtAccount(a));
   const debtTx = displayTransactions.filter((t) => t.date >= (selectedPeriod?.startDate ?? "") && t.date <= (selectedPeriod?.endDate ?? "") && (t.type === "transfer" && t.toAccountId && debtAccounts.some((a) => a.id === t.toAccountId)));
 
   const totalDebt = debtAccounts.reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);

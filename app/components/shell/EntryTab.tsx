@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useDashboardData } from "@/lib/dashboardData";
 import type { Transaction, PlannedTransaction } from "@/data/model/types";
 import { formatMoneyFull, shortDayLabel, todayISO } from "@/lib/dates";
+import { DEBT_ACCOUNT_TYPES, isDebtAccountType } from "@/lib/calculations";
 import { EntryForm, type KindConfig } from "./EntryForm";
 import {
   IncomeCatIcon,
@@ -19,14 +20,50 @@ import {
   XIcon,
 } from "./icons";
 
-/** The six primary recording kinds — all shown at once. */
+/**
+ * The six primary recording kinds — all shown at once.
+ *
+ * Savings/Debt/Investments are "assetMove" cards: the card the user
+ * clicked already says what's happening (money moving into savings /
+ * toward debt / into investments), so the recorded transaction is always
+ * a `type: "transfer"` between the chosen source account and an inferred
+ * destination account (see `targetAccountTypes` in EntryForm) — never a
+ * category the user has to configure, never a hidden transfer toggle.
+ */
 const KINDS: KindConfig[] = [
-  { id: "income", label: "Income", groups: ["income"], defaultType: "income", chooseType: false, transferToggle: false },
-  { id: "outflow", label: "Outflow", groups: ["bills", "expenses"], defaultType: "expense", chooseType: false, transferToggle: false },
-  { id: "savings", label: "Savings", groups: ["savings"], defaultType: "expense", chooseType: false, transferToggle: true },
-  { id: "debt", label: "Debt", groups: ["debt"], defaultType: "expense", chooseType: false, transferToggle: true },
-  { id: "other", label: "Other", groups: ["*"], defaultType: "expense", chooseType: true, transferToggle: false },
-  { id: "investments", label: "Investments", groups: ["investments"], defaultType: "expense", chooseType: false, transferToggle: true },
+  {
+    id: "income", label: "Income", groups: ["income"], defaultType: "income",
+    chooseType: false, transferToggle: false, mode: "income",
+    addTitle: "Add income", subtitle: "Record money you received", cta: "Add income",
+  },
+  {
+    id: "outflow", label: "Outflow", groups: ["bills", "expenses"], defaultType: "expense",
+    chooseType: false, transferToggle: false, mode: "outflow",
+    addTitle: "Add outflow", subtitle: "Record money you spent", cta: "Add outflow",
+  },
+  {
+    id: "savings", label: "Savings", groups: ["savings"], defaultType: "transfer",
+    chooseType: false, transferToggle: false, mode: "assetMove",
+    targetAccountTypes: ["savings"], createAccountType: "savings", moveVerb: "into", moveNoun: "Savings",
+    addTitle: "Add to savings", subtitle: "Move money into savings", cta: "Add to savings",
+  },
+  {
+    id: "debt", label: "Debt", groups: ["debt"], defaultType: "transfer",
+    chooseType: false, transferToggle: false, mode: "assetMove",
+    targetAccountTypes: [...DEBT_ACCOUNT_TYPES], createAccountType: "credit", moveVerb: "toward", moveNoun: "Debt",
+    addTitle: "Add debt payment", subtitle: "Record a payment toward debt", cta: "Add debt payment",
+  },
+  {
+    id: "other", label: "Other", groups: ["*"], defaultType: "expense",
+    chooseType: true, transferToggle: false, mode: "other",
+    addTitle: "Add other", subtitle: "Anything that doesn't fit the categories above", cta: "Add other",
+  },
+  {
+    id: "investments", label: "Investments", groups: ["investments"], defaultType: "transfer",
+    chooseType: false, transferToggle: false, mode: "assetMove",
+    targetAccountTypes: ["investment"], createAccountType: "investment", moveVerb: "into", moveNoun: "Investments",
+    addTitle: "Add investment", subtitle: "Move money into investments", cta: "Add investment",
+  },
 ];
 
 const CARD_META: Record<
@@ -130,7 +167,7 @@ export function EntryTab() {
       ].filter((type): type is NonNullable<typeof type> => Boolean(type));
       if (accountTypes.some((type) => type === "savings")) return KINDS.find((k) => k.id === "savings")!;
       if (accountTypes.some((type) => type === "investment")) return KINDS.find((k) => k.id === "investments")!;
-      if (accountTypes.some((type) => type === "credit" || type === "loan")) return KINDS.find((k) => k.id === "debt")!;
+      if (accountTypes.some((type) => isDebtAccountType(type))) return KINDS.find((k) => k.id === "debt")!;
       return null;
     })();
 
@@ -207,8 +244,8 @@ export function EntryTab() {
         unit: "balance",
       },
       debt: {
-        primary: sumByType(["credit", "loan"]),
-        count: countByAccountTypes(["credit", "loan"]),
+        primary: sumByType([...DEBT_ACCOUNT_TYPES]),
+        count: countByAccountTypes([...DEBT_ACCOUNT_TYPES]),
         unit: "balance",
       },
       investments: {

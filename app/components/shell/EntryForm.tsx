@@ -44,16 +44,65 @@ const CATEGORY_GROUPS: Array<{ value: CategoryGroup; label: string }> = [
   { value: "debt", label: "Debt" },
 ];
 
+/**
+ * What field set / financial behavior a card uses. The card the user
+ * clicked already communicates their intent — `mode` is what lets
+ * EntryForm answer "what does this card need to ask" instead of showing
+ * one generic transaction-configuration form for everything.
+ *
+ *  - "income"    — money received. Account + optional source text only.
+ *  - "outflow"   — money spent. Category + Account are genuinely needed
+ *                  (the only place categorization is the point); Schedule
+ *                  and Status are secondary, behind "More options".
+ *  - "assetMove" — an internal asset/liability movement: Savings, Debt,
+ *                  Investments. Always a `type: "transfer"` between the
+ *                  chosen source account and an inferred destination
+ *                  account (see `targetAccountTypes`) — never a category
+ *                  picker, never a transfer toggle, because the transfer
+ *                  IS the transaction; there's no other option to choose.
+ *  - "other"     — the one card with no inferable intent. Keeps the full
+ *                  existing configuration (type/category/account), since
+ *                  that configuration is exactly what's genuinely unknown.
+ */
+export type EntryMode = "income" | "outflow" | "assetMove" | "other";
+
 export interface KindConfig {
   id: string;
   label: string;
   /** Category groups offered for this card ("other" offers everything). */
   groups: string[];
   defaultType: TransactionType;
-  /** Show full Income/Expense/Transfer segmented control. */
+  /** Show full Income/Expense/Transfer segmented control ("other" only). */
   chooseType: boolean;
-  /** Show a simple expense⇄transfer toggle (Savings/Debt style payments). */
+  /** Legacy expense⇄transfer toggle — unused now that Savings/Debt/
+   *  Investments are always transfers by construction by mode, kept only
+   *  so old callers/tests referencing the field shape don't break. */
   transferToggle: boolean;
+  mode: EntryMode;
+  /** mode "assetMove" only: Account.type values that represent this
+   *  card's destination/target bucket (savings account, investment
+   *  account, credit/loan account, ...). Matched against real accounts
+   *  to decide whether the destination can be inferred silently (exactly
+   *  one match), must be asked (more than one), or must first be created
+   *  (none). */
+  targetAccountTypes?: string[];
+  /** mode "assetMove" only: the Account.type used when CREATING a new
+   *  destination account for this card (the app's own vocabulary — kept
+   *  narrower than `targetAccountTypes`, which also recognizes
+   *  differently-named legacy/imported account types on READ). */
+  createAccountType?: AccountType;
+  /** mode "assetMove" only: connecting word before the destination
+   *  account name, e.g. "into" (Savings/Investments) or "toward" (Debt). */
+  moveVerb?: string;
+  /** mode "assetMove" only: noun used as the fallback description and in
+   *  the destination-account creation prompt, e.g. "Savings". */
+  moveNoun?: string;
+  /** Modal title for a brand-new entry, e.g. "Add to savings". */
+  addTitle: string;
+  /** Modal subtitle shown under the title. */
+  subtitle: string;
+  /** Primary button label for a brand-new entry, e.g. "Add to savings". */
+  cta: string;
 }
 
 const inputCls =
@@ -62,9 +111,12 @@ const labelCls =
   "mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-text";
 
 /**
- * The one and only financial recording form. Creates or edits a real
- * Transaction through the existing provider CRUD — balances, budget
- * actuals, charts and KPIs all recalculate from the same store.
+ * The one Entry system behind all six cards. Every card still creates or
+ * edits a real Transaction through the existing provider CRUD — balances,
+ * budget actuals, charts and KPIs all recalculate from the same store —
+ * but the FIELDS shown and the semantics applied are specialized per
+ * `kind.mode`, so the user only answers what the app cannot already infer
+ * from which card they clicked.
  *
  * Viewport-aware layout: header and action footer are pinned, the form
  * body scrolls, so submit/cancel can never be clipped — even on short
@@ -106,6 +158,11 @@ export function EntryForm({
 
   const activeAccounts = useMemo(() => accounts.filter((a) => a.active), [accounts]);
   const editingEntity = editTx ?? editPlanned;
+  const isAssetMove = kind.mode === "assetMove";
+  const isIncomeMode = kind.mode === "income";
+  const isOutflowMode = kind.mode === "outflow";
+  const isOtherMode = kind.mode === "other";
+
   const [txType, setTxType] = useState<TransactionType>(editingEntity?.type ?? kind.defaultType);
   const [amount, setAmount] = useState(editingEntity ? String(editingEntity.amount) : "");
   const [date, setDate] = useState(editingEntity?.date ?? todayISO());
@@ -119,11 +176,17 @@ export function EntryForm({
   // Scheduling: a brand-new entry can be recorded now (a real Transaction,
   // the existing behavior) or scheduled for later (a PlannedTransaction,
   // shown in "Upcoming & recurring" / EntryTab's Scheduled list until it's
-  // paid or cancelled). Editing an existing planned entry is always in
-  // planned mode; editing a real transaction is never offered the choice.
+  // paid or cancelled). Only Outflow and Other offer this — Income and the
+  // asset-move cards (Savings/Debt/Investments) are always recorded now,
+  // per the simplified-entry design (nothing to defer: the user is
+  // reporting money that already moved).
   const [scheduleForLater, setScheduleForLater] = useState(false);
-  const isPlannedMode = !!editPlanned || (!editTx && scheduleForLater);
+  const canSchedule = !editingEntity && (isOutflowMode || isOtherMode);
+  const isPlannedMode = !!editPlanned || (canSchedule && scheduleForLater);
   const [recurrence, setRecurrence] = useState<Recurrence>(editPlanned?.recurrence ?? "once");
+
+  // Outflow only: Schedule/Status are secondary, tucked behind "More options".
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
 
   const [showAccountDialog, setShowAccountDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
@@ -136,6 +199,28 @@ export function EntryForm({
   const [accountError, setAccountError] = useState<string | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+
+  // ---- Asset-move destination (Savings / Debt / Investments) ----
+  // The destination is INFERRED, never configured: exactly one matching
+  // account is used silently; more than one means the app genuinely can't
+  // guess and asks; none means there's nothing to move money into yet, so
+  // the smallest necessary account is created first (also asked, once).
+  const targetAccounts = useMemo(
+    () => (isAssetMove ? activeAccounts.filter((a) => kind.targetAccountTypes?.includes(a.type)) : []),
+    [isAssetMove, activeAccounts, kind]
+  );
+  // An explicit selection (user picked one of several, or editing seeded
+  // one) always wins; otherwise, when exactly one destination account
+  // exists, it's inferred at render time — no effect/state sync needed,
+  // and nothing is asked the app can already answer itself.
+  const [selectedTargetAccountId, setSelectedTargetAccountId] = useState(editingEntity?.toAccountId ?? "");
+  const targetAccountId =
+    selectedTargetAccountId || (targetAccounts.length === 1 ? targetAccounts[0].id : "");
+  const [showTargetAccountDialog, setShowTargetAccountDialog] = useState(false);
+  const [newTargetAccountName, setNewTargetAccountName] = useState("");
+  const [newTargetAccountAmount, setNewTargetAccountAmount] = useState("0");
+  const [savingTargetAccount, setSavingTargetAccount] = useState(false);
+  const [targetAccountError, setTargetAccountError] = useState<string | null>(null);
 
   // Phase 3: the dialog only closes (and the new id only gets selected)
   // once the account is actually acknowledged by Supabase — previously
@@ -157,6 +242,34 @@ export function EntryForm({
       setAccountError(error instanceof Error ? error.message : "Could not save the account. Please retry.");
     } finally {
       setSavingAccount(false);
+    }
+  };
+
+  // Debt's destination account is stored as a NEGATIVE balance (amount
+  // owed) — matching this app's and production's existing convention
+  // (accountDelta applies the same signed transfer math to every account
+  // type; a negative loan/credit balance is what makes a payment TOWARD
+  // it move the number back toward zero instead of away from it). Savings
+  // and Investments destinations are ordinary positive starting balances.
+  const createTargetAccount = async () => {
+    const name = newTargetAccountName.trim();
+    if (!name || savingTargetAccount || !kind.createAccountType) return;
+    const entered = Math.max(0, Number(newTargetAccountAmount) || 0);
+    const openingBalance = kind.id === "debt" ? -entered : entered;
+    setSavingTargetAccount(true);
+    setTargetAccountError(null);
+    try {
+      const id = await addAccount({
+        name, type: kind.createAccountType, openingBalance, currency, active: true,
+      });
+      setSelectedTargetAccountId(id);
+      setNewTargetAccountName("");
+      setNewTargetAccountAmount("0");
+      setShowTargetAccountDialog(false);
+    } catch (error) {
+      setTargetAccountError(error instanceof Error ? error.message : "Could not save the account. Please retry.");
+    } finally {
+      setSavingTargetAccount(false);
     }
   };
 
@@ -187,6 +300,8 @@ export function EntryForm({
           setShowAccountDialog(false);
         } else if (showCategoryDialog) {
           setShowCategoryDialog(false);
+        } else if (showTargetAccountDialog) {
+          setShowTargetAccountDialog(false);
         } else {
           closeForm();
         }
@@ -199,7 +314,7 @@ export function EntryForm({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [closeForm, showAccountDialog, showCategoryDialog]);
+  }, [closeForm, showAccountDialog, showCategoryDialog, showTargetAccountDialog]);
 
   const catOptions = useMemo(
     () =>
@@ -222,27 +337,101 @@ export function EntryForm({
     [activeAccounts]
   );
 
+  const targetAccountOptions = useMemo(
+    () => targetAccounts.map((a) => ({ id: a.id, label: a.name, subtitle: a.type })),
+    [targetAccounts]
+  );
+
   const resolvedCatName =
     categories.find((c) => c.id === categoryId)?.name ?? kind.label;
 
-  const valid =
-    Number(amount) > 0 &&
-    !!accountId &&
-    !!categoryId &&
-    (txType !== "transfer" || (!!toAccountId && toAccountId !== accountId));
+  // Cross-currency transfer guard (follow-up correctness fix). The
+  // existing transfer mechanism (recomputeBalances/accountDelta) applies
+  // the SAME raw numeric amount to both the source and destination
+  // account — correct only when they share a currency; 100 USD is not
+  // 100 KES. Until a deliberate FX-conversion model exists for transfers,
+  // any transfer between differently-denominated accounts is blocked
+  // outright rather than silently misrepresenting the amount on one side.
+  // Applies to every mode that can produce a `type: "transfer"`
+  // transaction: the asset-move cards (Savings/Debt/Investments) and
+  // Other's transfer toggle.
+  const sourceAccount = activeAccounts.find((a) => a.id === accountId);
+  const destinationAccountId = isAssetMove ? targetAccountId : toAccountId;
+  const destinationAccount = activeAccounts.find((a) => a.id === destinationAccountId);
+  const isTransferLike = isAssetMove || (isOtherMode && txType === "transfer");
+  const currencyMismatch =
+    isTransferLike && !!sourceAccount && !!destinationAccount && sourceAccount.currency !== destinationAccount.currency;
+
+  const valid = useMemo(() => {
+    const amountOk = Number(amount) > 0;
+    if (!amountOk || !accountId) return false;
+    if (currencyMismatch) return false;
+    if (isAssetMove) {
+      return targetAccounts.length === 0 ? false : !!targetAccountId && targetAccountId !== accountId;
+    }
+    if (isIncomeMode) return true;
+    if (isOtherMode) {
+      const descOk = description.trim().length > 0;
+      return descOk && !!categoryId && (txType !== "transfer" || (!!toAccountId && toAccountId !== accountId));
+    }
+    // outflow
+    return !!categoryId;
+  }, [amount, accountId, currencyMismatch, isAssetMove, targetAccounts, targetAccountId, isIncomeMode, isOtherMode, description, categoryId, txType, toAccountId]);
+
+  /** Find an existing category in this card's group, or create exactly
+   *  one the first time it's needed — the user is never asked. */
+  const resolveKindCategoryId = async (): Promise<string> => {
+    const group = kind.groups[0] as CategoryGroup;
+    const existing = categories.find((c) => c.group === group);
+    if (existing) return existing.id;
+    return addCategory({
+      name: kind.moveNoun ?? kind.label,
+      group,
+      type: GROUP_TYPE_MAP[group],
+      color: GROUP_COLORS[group],
+    });
+  };
 
   const save = async () => {
     if (!valid || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
-    // Same currency rule as the transaction path below: never infer from
-    // the active DISPLAY currency (Phase 2 fix) — an existing entry keeps
-    // whatever currency it already had; a new one takes its account's
-    // real currency.
+    // Never infer from the active DISPLAY currency (Phase 2 fix): an
+    // existing entry keeps whatever currency it already had; a new one
+    // takes its (source) account's real currency.
     const resolvedCurrency = editingEntity?.currency ?? accounts.find((a) => a.id === accountId)?.currency;
     try {
-      if (isPlannedMode) {
+      if (isAssetMove) {
+        const resolvedCategoryId = editingEntity?.categoryId ?? (await resolveKindCategoryId());
+        entryIdRef.current ??= `tx-${crypto.randomUUID()}`;
+        const payload = {
+          date,
+          accountId,
+          categoryId: resolvedCategoryId,
+          type: "transfer" as TransactionType,
+          amount: Number(amount),
+          description: notes.trim() || kind.moveNoun || kind.label,
+          status: "cleared" as const,
+          currency: resolvedCurrency,
+          toAccountId: targetAccountId,
+        };
+        await saveEntry({ ...editTx, ...payload, id: entryIdRef.current });
+      } else if (isIncomeMode) {
+        const resolvedCategoryId = editingEntity?.categoryId ?? (await resolveKindCategoryId());
+        entryIdRef.current ??= `tx-${crypto.randomUUID()}`;
+        const payload = {
+          date,
+          accountId,
+          categoryId: resolvedCategoryId,
+          type: "income" as TransactionType,
+          amount: Number(amount),
+          description: description.trim() || "Income",
+          status: "cleared" as const,
+          currency: resolvedCurrency,
+        };
+        await saveEntry({ ...editTx, ...payload, id: entryIdRef.current });
+      } else if (isPlannedMode) {
         const plannedPayload = {
           date,
           accountId,
@@ -285,13 +474,31 @@ export function EntryForm({
     }
   };
 
+  const title = editTx
+    ? `Edit ${kind.label.toLowerCase()}`
+    : editPlanned
+      ? `Edit scheduled ${kind.label.toLowerCase()}`
+      : isPlannedMode
+        ? `Schedule ${kind.label.toLowerCase()}`
+        : kind.addTitle;
+
+  const ctaLabel = saving
+    ? "Saving…"
+    : editingEntity
+      ? "Save changes"
+      : isPlannedMode
+        ? `Schedule ${kind.label.toLowerCase()}`
+        : kind.cta;
+
+  const targetAccountName = targetAccounts.find((a) => a.id === targetAccountId)?.name;
+
   return createPortal(
     <>
       <div
         className="modal-overlay"
         role="dialog"
         aria-modal="true"
-        aria-label={`${editingEntity ? "Edit" : isPlannedMode ? "Schedule" : "Add"} ${kind.label}`}
+        aria-label={title}
         onClick={(e) => {
           if (e.target === e.currentTarget) closeForm();
         }}
@@ -307,8 +514,11 @@ export function EntryForm({
                 Entry
               </p>
               <h2 className="mt-0.5 text-2xl font-semibold leading-tight text-primary-text">
-                {editTx ? "Edit" : editPlanned ? "Edit scheduled" : isPlannedMode ? "Schedule" : "Add"} {kind.label.toLowerCase()}
+                {title}
               </h2>
+              {!editingEntity && kind.subtitle ? (
+                <p className="mt-0.5 text-xs text-secondary-text">{kind.subtitle}</p>
+              ) : null}
             </div>
             <button
               type="button"
@@ -364,8 +574,8 @@ export function EntryForm({
               </label>
             </div>
 
-            {/* Type selection */}
-            {kind.chooseType ? (
+            {/* ---- Other: full type selector (the one card with no inferable intent) ---- */}
+            {isOtherMode && kind.chooseType ? (
               <div className="mt-3">
                 <span className={labelCls}>Type</span>
                 <Segmented
@@ -378,57 +588,39 @@ export function EntryForm({
                   ]}
                 />
               </div>
-            ) : kind.transferToggle ? (
-              <button
-                type="button"
-                onClick={() => setTxType((t) => (t === "transfer" ? "expense" : "transfer"))}
-                aria-pressed={txType === "transfer"}
-                className="mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:bg-light-border focus-visible:ring-2 focus-visible:ring-blue/60"
-              >
-                <span>
-                 <span className="block text-xs font-medium text-primary-text">Transfer between accounts</span>
-                 <span className="block text-[10px] text-muted-text">Move money without affecting budgets</span>
-                </span>
-                <span
-                  className={`flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${
-                    txType === "transfer" ? "bg-blue" : "bg-border"
-                  }`}
-                >
-                  <span
-                    className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-                      txType === "transfer" ? "translate-x-4" : ""
-                    }`}
-                  />
-                </span>
-              </button>
             ) : null}
 
-            <label className="mt-3 block">
-              <span className={labelCls}>Description</span>
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={`e.g. ${kind.label === "Other" ? "What was it for?" : kind.label}`}
-                aria-label="Description"
-                className={inputCls}
-              />
-            </label>
-
-            {/* Category + account */}
-            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label className="block">
-                <span className={labelCls}>Category</span>
-                <SearchableSelect
-                  items={catOptions}
-                  value={categoryId}
-                  onChange={setCategoryId}
-                  onAddNew={() => setShowCategoryDialog(true)}
-                  placeholder="Select category…"
-                  searchPlaceholder="Search categories…"
-                  addLabel="Add category"
+            {/* ---- Income: optional free-text source ---- */}
+            {isIncomeMode ? (
+              <label className="mt-3 block">
+                <span className={labelCls}>Source (optional)</span>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="e.g. Salary"
+                  aria-label="Source"
+                  className={inputCls}
                 />
               </label>
-              <label className="block">
+            ) : null}
+
+            {/* ---- Other: required description ---- */}
+            {isOtherMode ? (
+              <label className="mt-3 block">
+                <span className={labelCls}>Description</span>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What was it for?"
+                  aria-label="Description"
+                  className={inputCls}
+                />
+              </label>
+            ) : null}
+
+            {/* ---- Income: account only ---- */}
+            {isIncomeMode ? (
+              <label className="mt-3 block">
                 <span className={labelCls}>Account</span>
                 <SearchableSelect
                   items={accountOptions}
@@ -440,9 +632,39 @@ export function EntryForm({
                   addLabel="Add account"
                 />
               </label>
-            </div>
+            ) : null}
 
-            {txType === "transfer" ? (
+            {/* ---- Outflow / Other: category + account ---- */}
+            {isOutflowMode || isOtherMode ? (
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="block">
+                  <span className={labelCls}>Category</span>
+                  <SearchableSelect
+                    items={catOptions}
+                    value={categoryId}
+                    onChange={setCategoryId}
+                    onAddNew={() => setShowCategoryDialog(true)}
+                    placeholder="Select category…"
+                    searchPlaceholder="Search categories…"
+                    addLabel="Add category"
+                  />
+                </label>
+                <label className="block">
+                  <span className={labelCls}>Account</span>
+                  <SearchableSelect
+                    items={accountOptions}
+                    value={accountId}
+                    onChange={setAccountId}
+                    onAddNew={() => setShowAccountDialog(true)}
+                    placeholder="Select account…"
+                    searchPlaceholder="Search accounts…"
+                    addLabel="Add account"
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {isOtherMode && txType === "transfer" ? (
               <label className="mt-2 block">
                 <span className={labelCls}>To account</span>
                 <select
@@ -463,9 +685,103 @@ export function EntryForm({
               </label>
             ) : null}
 
-            {/* Schedule for later (new entries only — reuses the exact
-                Transfer-toggle visual pattern above) */}
-            {!editingEntity ? (
+            {/* ---- Savings / Debt / Investments: from account + inferred destination ---- */}
+            {isAssetMove ? (
+              <>
+                <label className="mt-3 block">
+                  <span className={labelCls}>From account</span>
+                  <SearchableSelect
+                    items={accountOptions}
+                    value={accountId}
+                    onChange={setAccountId}
+                    onAddNew={() => setShowAccountDialog(true)}
+                    placeholder="Select account…"
+                    searchPlaceholder="Search accounts…"
+                    addLabel="Add account"
+                  />
+                </label>
+
+                {targetAccounts.length === 0 ? (
+                  <div className="mt-3 rounded-xl border border-dashed border-border bg-card/30 px-3 py-3">
+                    <p className="text-[11px] text-muted-text">
+                      {kind.id === "debt"
+                        ? "No debt account yet — add the one this payment goes toward."
+                        : `No ${(kind.moveNoun ?? kind.label).toLowerCase()} account yet — add one to move money into.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowTargetAccountDialog(true)}
+                      className="mt-2 h-8 rounded-lg border border-border bg-card px-3 text-[11px] font-medium text-primary-text transition-colors hover:bg-light-border focus-visible:ring-2 focus-visible:ring-blue/60"
+                    >
+                      {kind.id === "debt" ? "Add debt account" : `Add ${(kind.moveNoun ?? kind.label).toLowerCase()} account`}
+                    </button>
+                  </div>
+                ) : targetAccounts.length === 1 ? (
+                  targetAccountName ? (
+                    <p className="mt-2 text-[11px] text-muted-text">
+                      {kind.moveVerb ?? "into"} <span className="font-medium text-secondary-text">{targetAccountName}</span>
+                    </p>
+                  ) : null
+                ) : (
+                  <label className="mt-3 block">
+                    <span className={labelCls}>
+                      {kind.id === "debt" ? "Pay toward" : `${kind.moveNoun ?? kind.label} account`}
+                    </span>
+                    <SearchableSelect
+                      items={targetAccountOptions}
+                      value={targetAccountId}
+                      onChange={setSelectedTargetAccountId}
+                      onAddNew={() => setShowTargetAccountDialog(true)}
+                      placeholder="Select account…"
+                      searchPlaceholder="Search accounts…"
+                      addLabel={kind.id === "debt" ? "Add debt account" : `Add ${(kind.moveNoun ?? kind.label).toLowerCase()} account`}
+                    />
+                  </label>
+                )}
+              </>
+            ) : null}
+
+            {/* ---- Outflow: progressive disclosure for Schedule + Status ---- */}
+            {isOutflowMode ? (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => setMoreOptionsOpen((s) => !s)}
+                  aria-expanded={moreOptionsOpen}
+                  className="rounded text-[11px] font-medium text-secondary-text transition-colors hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60"
+                >
+                  {moreOptionsOpen ? "Hide more options" : "More options"}
+                </button>
+              </div>
+            ) : null}
+
+            {isOutflowMode && moreOptionsOpen && canSchedule ? (
+              <button
+                type="button"
+                onClick={() => setScheduleForLater((s) => !s)}
+                aria-pressed={scheduleForLater}
+                className="mt-2 flex w-full items-center justify-between rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:bg-light-border focus-visible:ring-2 focus-visible:ring-blue/60"
+              >
+                <span>
+                  <span className="block text-xs font-medium text-primary-text">Schedule for later</span>
+                  <span className="block text-[10px] text-muted-text">Save as upcoming — only counts once you pay it</span>
+                </span>
+                <span
+                  className={`flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${
+                    scheduleForLater ? "bg-blue" : "bg-border"
+                  }`}
+                >
+                  <span
+                    className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                      scheduleForLater ? "translate-x-4" : ""
+                    }`}
+                  />
+                </span>
+              </button>
+            ) : null}
+
+            {/* Other: schedule stays available too (existing behavior) */}
+            {isOtherMode && canSchedule ? (
               <button
                 type="button"
                 onClick={() => setScheduleForLater((s) => !s)}
@@ -490,7 +806,10 @@ export function EntryForm({
               </button>
             ) : null}
 
-            {/* Status (real transactions) / Repeat (planned entries) */}
+            {/* Status (real transactions) / Repeat (planned entries) —
+                Outflow: behind More options. Other: always shown (existing
+                behavior). Income/asset-move: never shown — always recorded
+                now, as cleared. */}
             {isPlannedMode ? (
               <label className="mt-3 block">
                 <span className={labelCls}>Repeat</span>
@@ -505,7 +824,7 @@ export function EntryForm({
                   <option value="yearly">Yearly</option>
                 </select>
               </label>
-            ) : (
+            ) : isOtherMode || (isOutflowMode && moreOptionsOpen) ? (
               <label className="mt-3 block">
                 <span className={labelCls}>Status</span>
                 <select
@@ -519,34 +838,59 @@ export function EntryForm({
                   <option value="reconciled">Reconciled</option>
                 </select>
               </label>
-            )}
-
-            {/* Notes — PlannedTransaction has no notes field in the data
-                model, so this only applies to real transactions. */}
-            {!isPlannedMode ? (
-            <button
-              type="button"
-              onClick={() => setShowNotes((s) => !s)}
-              className="mt-2 rounded text-[11px] font-medium text-secondary-text transition-colors hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60"
-            >
-              {showNotes ? "Hide notes" : "+ Add note"}
-            </button>
-            ) : null}
-            {!isPlannedMode && showNotes ? (
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                placeholder="Details, context…"
-                aria-label="Notes"
-                className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-xs text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
-              />
             ) : null}
 
-            {!valid ? (
+            {/* Note — Outflow/asset-move: a single optional line, shown
+                directly (it's one of the few fields these cards ask for).
+                Other: the existing toggle-to-reveal textarea. */}
+            {(isOutflowMode || isAssetMove) && !isPlannedMode ? (
+              <label className="mt-3 block">
+                <span className={labelCls}>Note (optional)</span>
+                <input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Details, context…"
+                  aria-label="Note"
+                  className={inputCls}
+                />
+              </label>
+            ) : null}
+
+            {isOtherMode && !isPlannedMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowNotes((s) => !s)}
+                  className="mt-2 rounded text-[11px] font-medium text-secondary-text transition-colors hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60"
+                >
+                  {showNotes ? "Hide notes" : "+ Add note"}
+                </button>
+                {showNotes ? (
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={2}
+                    placeholder="Details, context…"
+                    aria-label="Notes"
+                    className="mt-1.5 w-full rounded-xl border border-border bg-card px-3 py-2 text-xs text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
+                  />
+                ) : null}
+              </>
+            ) : null}
+
+            {currencyMismatch ? (
+              <p role="alert" className="mt-3 text-center text-[10px] font-medium text-orange">
+                Transfers between different currencies aren&apos;t supported yet.
+              </p>
+            ) : !valid ? (
               <p className="mt-3 text-center text-[10px] text-muted-text">
-                Amount, category and account are required
-                {txType === "transfer" ? " — pick two different accounts for transfers." : "."}
+                {isAssetMove && targetAccounts.length === 0
+                  ? `Amount, from account, and a ${(kind.moveNoun ?? kind.label).toLowerCase()} account are required.`
+                  : isAssetMove
+                    ? "Amount, from account, and a destination account are required."
+                    : isOtherMode
+                      ? `Amount, description, category and account are required${txType === "transfer" ? " — pick two different accounts for transfers." : "."}`
+                      : "Amount, category and account are required."}
               </p>
             ) : null}
           </fieldset>
@@ -568,13 +912,7 @@ export function EntryForm({
                 disabled={!valid || saving}
                 className="h-10 flex-1 rounded-xl bg-blue text-xs font-semibold text-white transition-colors hover:bg-blue/90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-blue/60"
               >
-                {saving
-                  ? "Saving…"
-                  : editingEntity
-                    ? "Save changes"
-                    : isPlannedMode
-                      ? `Schedule ${kind.label.toLowerCase()}`
-                      : `Add ${kind.label.toLowerCase()}`}
+                {ctaLabel}
               </button>
             </div>
           </footer>
@@ -638,6 +976,55 @@ export function EntryForm({
             disabled={!newAccountName.trim()}
             busy={savingAccount}
             error={accountError}
+          />,
+          document.body
+        )}
+
+      {showTargetAccountDialog &&
+        createPortal(
+          <QuickAddDialog
+            title={kind.id === "debt" ? "Add debt account" : `Add ${(kind.moveNoun ?? kind.label).toLowerCase()} account`}
+            fields={
+              <>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Account name</span>
+                  <input
+                    value={newTargetAccountName}
+                    onChange={(e) => setNewTargetAccountName(e.target.value)}
+                    placeholder={kind.id === "debt" ? "e.g. Credit Card" : `e.g. ${kind.moveNoun ?? kind.label}`}
+                    aria-label="Account name"
+                    className={inputCls}
+                    autoFocus
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">
+                    {kind.id === "debt" ? "Current amount owed" : "Starting balance"}
+                  </span>
+                  <input
+                    inputMode="decimal"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newTargetAccountAmount}
+                    onChange={(e) => setNewTargetAccountAmount(e.target.value)}
+                    placeholder="0.00"
+                    aria-label={kind.id === "debt" ? "Current amount owed" : "Starting balance"}
+                    className={inputCls}
+                  />
+                </label>
+              </>
+            }
+            onCreate={createTargetAccount}
+            onCancel={() => {
+              setShowTargetAccountDialog(false);
+              setNewTargetAccountName("");
+              setNewTargetAccountAmount("0");
+              setTargetAccountError(null);
+            }}
+            disabled={!newTargetAccountName.trim()}
+            busy={savingTargetAccount}
+            error={targetAccountError}
           />,
           document.body
         )}

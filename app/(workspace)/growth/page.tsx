@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { formatCurrencyFull, formatCurrencyCompact } from "@/lib/currency";
 import { useDashboardData } from "@/lib/dashboardData";
+import { isAssetAccount, isDebtAccount } from "@/lib/calculations";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function GrowthDetails() {
@@ -18,18 +19,18 @@ export default function GrowthDetails() {
 
   const period = selectedPeriod;
   const assets = displayAccounts
-    .filter((a) => a.type === "checking" || a.type === "savings" || a.type === "investment")
+    .filter((a) => isAssetAccount(a))
     .reduce((sum, a) => sum + a.currentBalance, 0);
   const debts = displayAccounts
-    .filter((a) => a.type === "credit" || a.type === "loan")
+    .filter((a) => isDebtAccount(a))
     .reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);
   const currentNetWorth = assets - debts;
 
   const openingAssets = displayAccounts
-    .filter((a) => a.type === "checking" || a.type === "savings" || a.type === "investment")
+    .filter((a) => isAssetAccount(a))
     .reduce((sum, a) => sum + a.openingBalance, 0);
   const openingDebts = displayAccounts
-    .filter((a) => a.type === "credit" || a.type === "loan")
+    .filter((a) => isDebtAccount(a))
     .reduce((sum, a) => sum + Math.abs(a.openingBalance), 0);
   const startingNetWorth = openingAssets - openingDebts;
 

@@ -47,7 +47,11 @@ function Probe({ form = false, editTx }: { form?: boolean; editTx?: Transaction 
   return <>
     <span data-testid="status">{data.cloudSyncState}</span>
     <span data-testid="entries">{data.transactions.map((t) => t.description).join(",")}</span>
-    {form && <EntryForm kind={{ id: "expenses", label: "Expense", groups: ["expenses"], defaultType: "expense", chooseType: false, transferToggle: false }} onClose={closed} editTx={editTx} />}
+    {form && <EntryForm kind={{
+      id: "expenses", label: "Expense", groups: ["expenses"], defaultType: "expense",
+      chooseType: false, transferToggle: false, mode: "other",
+      addTitle: "Add expense", subtitle: "", cta: "Add expense",
+    }} onClose={closed} editTx={editTx} />}
   </>;
 }
 beforeEach(() => {
@@ -86,6 +90,7 @@ it("Entry stays open during commit, reports failure, and retries the same ID", a
   render(<DashboardProvider><Probe form /></DashboardProvider>);
   await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("synced"));
   fireEvent.change(screen.getByLabelText("Amount in USD"), { target: { value: "7" } });
+  fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Groceries" } });
   // SearchableSelect is replaced only for the test; the real Entry submit runs.
   const categorySelect = screen.getAllByRole("combobox").find((node) => node.textContent?.includes("Food"))!;
   fireEvent.change(categorySelect, { target: { value: "c" } });

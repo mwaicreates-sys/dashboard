@@ -2,6 +2,7 @@
 
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyFull } from "@/lib/currency";
+import { isDebtAccount } from "@/lib/calculations";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function OutflowDetails() {
@@ -20,7 +21,7 @@ export default function OutflowDetails() {
   const debtPayments = transferTx
     .filter((t) => {
       const to = accounts.find((a) => a.id === t.toAccountId);
-      return to?.type === "credit" || to?.type === "loan";
+      return !!to && isDebtAccount(to);
     })
     .reduce((sum, t) => sum + t.amount, 0);
   const savingsInvestTransfers = transferTx

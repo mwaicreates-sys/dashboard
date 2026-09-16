@@ -45,6 +45,63 @@ export function isRealized(t: Pick<Transaction, "status">): boolean {
   return t.status !== "pending";
 }
 
+/**
+ * The debt/liability account types (follow-up correctness fix).
+ *
+ * Root cause: this app's Account.type union originally listed only
+ * "credit" and "loan" as liability types. Production's actual account_type
+ * enum also includes "credit_card" as a DISTINCT value from "credit" (both
+ * represent a liability, just created through different paths — "credit"
+ * is what this app's own "Add account" dialog writes; "credit_card" exists
+ * on accounts created outside that dialog, e.g. earlier imports). Every
+ * debt-recognition site that checked only `type === "credit" || "loan"`
+ * silently failed to recognize a real "credit_card" account as debt at
+ * all — it vanished from the Debts KPI, the Debt card/detail page, net
+ * worth, and the Debt entry's destination-account inference.
+ *
+ * This is the single source of truth every one of those sites must import
+ * from, instead of re-deriving its own type list.
+ */
+export const DEBT_ACCOUNT_TYPES = ["credit", "credit_card", "loan"] as const;
+
+export function isDebtAccountType(type: string): boolean {
+  return (DEBT_ACCOUNT_TYPES as readonly string[]).includes(type);
+}
+
+export function isDebtAccount(account: { type: string }): boolean {
+  return isDebtAccountType(account.type);
+}
+
+/**
+ * The asset account types (follow-up correctness fix, same root cause as
+ * DEBT_ACCOUNT_TYPES above). Production's real account_type enum has 10
+ * values; this app's net-worth/asset-total code only ever recognized
+ * "checking" | "savings" | "investment", so a real "cash", "bank" or
+ * "mobile_money" account — all genuinely in production use — silently
+ * vanished from Net Worth and the Growth page's asset totals (neither an
+ * asset nor a debt, per the old allowlist).
+ *
+ * "other" is deliberately EXCLUDED. It has zero rows in production today,
+ * is not offered by this app's own "Add account" dialog (so nothing in
+ * this codebase has ever given it a meaning), and nothing about the value
+ * itself signals asset vs. liability. Classifying it either way would be
+ * a guess, not a fact recovered from existing semantics — per the
+ * explicit instruction not to guess, an "other"-typed account is excluded
+ * from both isAssetAccount and isDebtAccount, so it net-worth-neutral
+ * (silently omitted) rather than silently miscounted. Revisit if/when
+ * "other" gets an actual meaning (e.g. a real account is created with it,
+ * or product decides what it should represent).
+ */
+export const ASSET_ACCOUNT_TYPES = ["cash", "bank", "mobile_money", "checking", "savings", "investment"] as const;
+
+export function isAssetAccountType(type: string): boolean {
+  return (ASSET_ACCOUNT_TYPES as readonly string[]).includes(type);
+}
+
+export function isAssetAccount(account: { type: string }): boolean {
+  return isAssetAccountType(account.type);
+}
+
 function hashString(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i += 1) {
@@ -156,7 +213,7 @@ export function calculateKPIs(
     .reduce((sum, a) => sum + a.currentBalance, 0);
 
   const totalDebt = accounts
-    .filter((a) => a.type === "credit" || a.type === "loan")
+    .filter((a) => isDebtAccount(a))
     .reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);
 
   const savingsPercentage = totalIncome > 0 ? Math.round(((totalIncome - totalOutflow) / totalIncome) * 100) : 0;
@@ -171,7 +228,7 @@ export function calculateKPIs(
   // Baseline debt comes from the (converted) opening balances so the ratio
   // stays currency-consistent no matter which display currency is active.
   const originalDebt = accounts
-    .filter((a) => a.type === "credit" || a.type === "loan")
+    .filter((a) => isDebtAccount(a))
     .reduce((sum, a) => sum + Math.abs(a.openingBalance), 0);
   const debtPercentage = originalDebt > 0 ? Math.round((totalDebt / originalDebt) * 100) : 0;
 
@@ -288,9 +345,15 @@ export function calculateNetWorthGrowth(
   }
 
   // Opening net worth at the start of the period (opening balances).
+  // Explicit asset/debt classification (not "assume everything is an
+  // asset unless it's debt") so this agrees with growth/page.tsx's own
+  // net-worth math: an unrecognized type (e.g. "other" — see
+  // ASSET_ACCOUNT_TYPES's doc comment) is excluded rather than guessed
+  // into either side.
   const openingNW = accounts.reduce((sum, a) => {
-    const bal = a.type === "credit" || a.type === "loan" ? -Math.abs(a.openingBalance) : a.openingBalance;
-    return sum + bal;
+    if (isDebtAccount(a)) return sum - Math.abs(a.openingBalance);
+    if (isAssetAccount(a)) return sum + a.openingBalance;
+    return sum;
   }, 0);
 
   let cumulative = 0;

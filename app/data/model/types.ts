@@ -23,7 +23,22 @@ export type AccountType =
   | "savings"
   | "investment"
   | "credit"
-  | "loan";
+  /** Production's real account_type enum also includes this value
+   *  (distinct from "credit" — both are liability/debt accounts). See
+   *  isDebtAccountType in @/lib/calculations, the single source of truth
+   *  for "is this account a debt/liability account" across the app. */
+  | "credit_card"
+  | "loan"
+  /** Production's real account_type enum also includes these three asset
+   *  types. See isAssetAccountType in @/lib/calculations, the single
+   *  source of truth for "is this account an asset account" across the
+   *  app. */
+  | "cash"
+  | "bank"
+  | "mobile_money"
+  /** Present in the schema but deliberately unclassified — see
+   *  ASSET_ACCOUNT_TYPES's doc comment in @/lib/calculations for why. */
+  | "other";
 
 export type CurrencyCode = "USD" | "EUR" | "GBP" | "KES";
 
