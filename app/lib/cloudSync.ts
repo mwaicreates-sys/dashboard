@@ -50,8 +50,22 @@ export interface BusinessInfo {
   role: "owner" | "admin" | "member" | "platform-admin";
 }
 
-/** Cloud sync session status (surfaced through the dashboard context). */
-export type CloudSyncState = "idle" | "syncing" | "synced" | "offline" | "error";
+/** Cloud sync session status (surfaced through the dashboard context).
+ *  "conflict" is terminal for the current queue instance — see
+ *  CloudSaveQueue: a stale optimistic-concurrency rejection is never
+ *  retried automatically (Phase 3), only a reload can recover it. */
+export type CloudSyncState = "idle" | "syncing" | "synced" | "offline" | "error" | "conflict";
+
+/** Thrown by pushBusinessState specifically for a 40001 (stale row) reject —
+ *  lets callers distinguish "this exact retry can never succeed without a
+ *  fresh pull" from an ordinary transient/network failure, instead of
+ *  string-matching the error message. */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
 
 /** Full business-scoped state exchanged with the cloud. */
 export interface CloudState {
@@ -491,7 +505,7 @@ export async function pushBusinessState(
     p_business_id: businessId, p_changes: changes,
   });
   if (error) {
-    if (error.code === "40001") throw new Error("This record changed in another session. Reload before editing it.");
+    if (error.code === "40001") throw new ConflictError("This record changed in another session. Reload before editing it.");
     throw new Error(`Save was not confirmed (${error.code}). Keep this form open and retry.`);
   }
   if (!Array.isArray(data) || data.length !== changes.length) throw new Error("Save confirmation was incomplete. Retry.");

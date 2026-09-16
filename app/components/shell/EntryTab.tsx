@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useDashboardData } from "@/lib/dashboardData";
-import type { Transaction } from "@/data/model/types";
+import type { Transaction, PlannedTransaction } from "@/data/model/types";
 import { formatMoneyFull, shortDayLabel, todayISO } from "@/lib/dates";
 import { EntryForm, type KindConfig } from "./EntryForm";
 import {
@@ -80,6 +80,7 @@ export function EntryTab() {
     displayTransactions,
     displayAccounts,
     displayPlannedTransactions,
+    plannedTransactions,
     selectedYear,
     updateTransaction,
     deleteTransaction,
@@ -87,7 +88,19 @@ export function EntryTab() {
     cancelPlannedTransaction,
   } = useDashboardData();
 
-  const [form, setForm] = useState<{ kind: KindConfig; edit?: Transaction } | null>(null);
+  const [form, setForm] = useState<{ kind: KindConfig; edit?: Transaction; editPlanned?: PlannedTransaction } | null>(null);
+  // Phase 3: inline list actions (pay/cancel/mark-cleared/delete) are no
+  // longer fire-and-forget — a rejected write surfaces here instead of
+  // silently leaving a false "it worked" impression.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runAction = async (action: () => Promise<unknown>) => {
+    try {
+      await action();
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not save. Please try again.");
+    }
+  };
   const today = todayISO();
 
   const catById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
@@ -102,7 +115,9 @@ export function EntryTab() {
     [displayTransactions, selectedYear]
   );
 
-  const kindForTx = (tx: Transaction): KindConfig => {
+  // Structural, not Transaction-specific — also used for PlannedTransaction
+  // rows below, which share the same category/account/type shape.
+  const kindForTx = (tx: Pick<Transaction, "categoryId" | "accountId" | "toAccountId" | "type">): KindConfig => {
     const category = catById.get(tx.categoryId);
     const group = category?.group;
 
@@ -243,6 +258,12 @@ export function EntryTab() {
         </p>
       </header>
 
+      {actionError ? (
+        <p role="alert" className="rounded-xl border border-orange/30 bg-orange/5 px-3 py-2 text-xs font-medium text-orange">
+          {actionError}
+        </p>
+      ) : null}
+
       {/* Six compact category cards — 3-across on desktop, 2-across on small, 1 on mobile */}
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {KINDS.map((kind) => {
@@ -331,7 +352,15 @@ export function EntryTab() {
                         i > 0 ? "border-t border-light-border" : ""
                       } ${overdue ? "bg-orange/[0.05]" : "bg-surface"}`}
                     >
-                      <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const raw = plannedTransactions.find((r) => r.id === p.id) ?? p;
+                          setForm({ kind: kindForTx(raw), editPlanned: raw });
+                        }}
+                        aria-label={`Edit scheduled ${p.description}`}
+                        className="min-w-0 flex-1 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-blue/60"
+                      >
                         <div className="flex items-center gap-1.5">
                           <span className="truncate text-[12px] font-medium text-primary-text">{p.description}</span>
                           {overdue ? (
@@ -345,7 +374,7 @@ export function EntryTab() {
                           {p.recurrence && p.recurrence !== "once" ? ` · ${p.recurrence}` : " · one-off"}
                           {accName(p.toAccountId) ? ` · to ${accName(p.toAccountId)}` : ""}
                         </p>
-                      </div>
+                      </button>
                       <span
                         className={`w-20 shrink-0 text-right text-[12px] font-semibold tabular-nums ${
                           p.type === "income" ? "text-green" : p.type === "expense" ? "text-orange" : "text-teal"
@@ -360,7 +389,7 @@ export function EntryTab() {
                       <div className="flex shrink-0 items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => payPlannedTransaction(p.id)}
+                          onClick={() => void runAction(() => payPlannedTransaction(p.id))}
                           aria-label={`Record ${p.description} as paid`}
                           title="Record now"
                           className="flex h-7 items-center gap-1 rounded-lg border border-green/40 px-2 text-[10px] font-semibold text-green transition-colors hover:bg-green/10 focus-visible:ring-2 focus-visible:ring-green/50"
@@ -370,7 +399,7 @@ export function EntryTab() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => cancelPlannedTransaction(p.id)}
+                          onClick={() => void runAction(() => cancelPlannedTransaction(p.id))}
                           aria-label={`Cancel ${p.description}`}
                           title="Cancel"
                           className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-muted-text transition-colors hover:border-orange/50 hover:text-orange focus-visible:ring-2 focus-visible:ring-orange/50"
@@ -431,7 +460,7 @@ export function EntryTab() {
                       {tx.status === "pending" ? (
                         <button
                           type="button"
-                          onClick={() => updateTransaction(tx.id, { status: "cleared" })}
+                          onClick={() => void runAction(() => updateTransaction(tx.id, { status: "cleared" }))}
                           aria-label={`Mark ${tx.description} as cleared`}
                           className="h-7 shrink-0 rounded-lg border border-amber-500/50 bg-amber-500/10 px-2 text-[10px] font-semibold text-amber-600 transition-colors hover:bg-amber-500/20 focus-visible:ring-2 focus-visible:ring-amber-500/50 dark:text-amber-400"
                         >
@@ -457,7 +486,7 @@ export function EntryTab() {
                       </span>
                       <button
                         type="button"
-                        onClick={() => deleteTransaction(tx.id)}
+                        onClick={() => void runAction(() => deleteTransaction(tx.id))}
                         aria-label={`Delete ${tx.description}`}
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-text transition-colors hover:bg-card hover:text-orange focus-visible:ring-2 focus-visible:ring-orange/50"
                       >
@@ -472,7 +501,14 @@ export function EntryTab() {
       </div>
 
       {/* Add / edit sheet */}
-      {form ? <EntryForm kind={form.kind} editTx={form.edit ?? null} onClose={() => setForm(null)} /> : null}
+      {form ? (
+        <EntryForm
+          kind={form.kind}
+          editTx={form.edit ?? null}
+          editPlanned={form.editPlanned ?? null}
+          onClose={() => setForm(null)}
+        />
+      ) : null}
     </div>
   );
 }

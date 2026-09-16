@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDashboardData } from "@/lib/dashboardData";
-import type { Transaction, TransactionType, CategoryGroup, AccountType } from "@/data/model/types";
+import type { Transaction, TransactionType, CategoryGroup, AccountType, PlannedTransaction, Recurrence } from "@/data/model/types";
 import { todayISO } from "@/lib/dates";
 import { getCurrency } from "@/lib/currency";
 import { XIcon } from "./icons";
@@ -73,10 +73,13 @@ const labelCls =
 export function EntryForm({
   kind,
   editTx,
+  editPlanned,
   onClose,
 }: {
   kind: KindConfig;
   editTx?: Transaction | null;
+  /** Edit an existing scheduled/planned entry instead of a real transaction. */
+  editPlanned?: PlannedTransaction | null;
   onClose: () => void;
 }) {
   const {
@@ -86,6 +89,8 @@ export function EntryForm({
     saveEntry,
     addAccount,
     addCategory,
+    addPlanned,
+    updatePlanned,
   } = useDashboardData();
 
   const [saving, setSaving] = useState(false);
@@ -100,16 +105,25 @@ export function EntryForm({
   const amountSymbol = activeCurrency.symbol;
 
   const activeAccounts = useMemo(() => accounts.filter((a) => a.active), [accounts]);
-  const [txType, setTxType] = useState<TransactionType>(editTx?.type ?? kind.defaultType);
-  const [amount, setAmount] = useState(editTx ? String(editTx.amount) : "");
-  const [date, setDate] = useState(editTx?.date ?? todayISO());
-  const [description, setDescription] = useState(editTx?.description ?? "");
-  const [categoryId, setCategoryId] = useState(editTx?.categoryId ?? "");
-  const [accountId, setAccountId] = useState(editTx?.accountId ?? activeAccounts[0]?.id ?? "");
-  const [toAccountId, setToAccountId] = useState(editTx?.toAccountId ?? "");
+  const editingEntity = editTx ?? editPlanned;
+  const [txType, setTxType] = useState<TransactionType>(editingEntity?.type ?? kind.defaultType);
+  const [amount, setAmount] = useState(editingEntity ? String(editingEntity.amount) : "");
+  const [date, setDate] = useState(editingEntity?.date ?? todayISO());
+  const [description, setDescription] = useState(editingEntity?.description ?? "");
+  const [categoryId, setCategoryId] = useState(editingEntity?.categoryId ?? "");
+  const [accountId, setAccountId] = useState(editingEntity?.accountId ?? activeAccounts[0]?.id ?? "");
+  const [toAccountId, setToAccountId] = useState(editingEntity?.toAccountId ?? "");
   const [status, setStatus] = useState<Transaction["status"]>(editTx?.status ?? "cleared");
   const [notes, setNotes] = useState(editTx?.notes ?? "");
   const [showNotes, setShowNotes] = useState<boolean>(!!editTx?.notes);
+  // Scheduling: a brand-new entry can be recorded now (a real Transaction,
+  // the existing behavior) or scheduled for later (a PlannedTransaction,
+  // shown in "Upcoming & recurring" / EntryTab's Scheduled list until it's
+  // paid or cancelled). Editing an existing planned entry is always in
+  // planned mode; editing a real transaction is never offered the choice.
+  const [scheduleForLater, setScheduleForLater] = useState(false);
+  const isPlannedMode = !!editPlanned || (!editTx && scheduleForLater);
+  const [recurrence, setRecurrence] = useState<Recurrence>(editPlanned?.recurrence ?? "once");
 
   const [showAccountDialog, setShowAccountDialog] = useState(false);
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
@@ -118,39 +132,51 @@ export function EntryForm({
   const [newAccountOpening, setNewAccountOpening] = useState("0");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryGroup, setNewCategoryGroup] = useState<CategoryGroup>(kind.groups[0] as CategoryGroup);
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
-  const createAccount = () => {
+  // Phase 3: the dialog only closes (and the new id only gets selected)
+  // once the account is actually acknowledged by Supabase — previously
+  // this closed unconditionally before the cloud write was even attempted.
+  const createAccount = async () => {
     const name = newAccountName.trim();
-    if (!name) return;
+    if (!name || savingAccount) return;
     const openingBalance = Math.max(0, Number(newAccountOpening) || 0);
-    const id = addAccount({
-      name,
-      type: newAccountType,
-      openingBalance,
-      currency,
-      active: true,
-    });
-    setAccountId(id);
-    setNewAccountName("");
-    setNewAccountType("checking");
-    setNewAccountOpening("0");
-    setShowAccountDialog(false);
+    setSavingAccount(true);
+    setAccountError(null);
+    try {
+      const id = await addAccount({ name, type: newAccountType, openingBalance, currency, active: true });
+      setAccountId(id);
+      setNewAccountName("");
+      setNewAccountType("checking");
+      setNewAccountOpening("0");
+      setShowAccountDialog(false);
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "Could not save the account. Please retry.");
+    } finally {
+      setSavingAccount(false);
+    }
   };
 
-  const createCategory = () => {
+  const createCategory = async () => {
     const name = newCategoryName.trim();
-    if (!name) return;
+    if (!name || savingCategory) return;
     const group = newCategoryGroup;
-    const id = addCategory({
-      name,
-      group,
-      type: GROUP_TYPE_MAP[group],
-      color: GROUP_COLORS[group],
-    });
-    setCategoryId(id);
-    setNewCategoryName("");
-    setNewCategoryGroup(kind.groups[0] as CategoryGroup);
-    setShowCategoryDialog(false);
+    setSavingCategory(true);
+    setCategoryError(null);
+    try {
+      const id = await addCategory({ name, group, type: GROUP_TYPE_MAP[group], color: GROUP_COLORS[group] });
+      setCategoryId(id);
+      setNewCategoryName("");
+      setNewCategoryGroup(kind.groups[0] as CategoryGroup);
+      setShowCategoryDialog(false);
+    } catch (error) {
+      setCategoryError(error instanceof Error ? error.message : "Could not save the category. Please retry.");
+    } finally {
+      setSavingCategory(false);
+    }
   };
 
   // Escape closes; body scroll locks while open.
@@ -210,21 +236,45 @@ export function EntryForm({
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
-    entryIdRef.current ??= `tx-${crypto.randomUUID()}`;
-    const payload = {
-      date,
-      accountId,
-      categoryId,
-      type: txType,
-      amount: Number(amount),
-      description: description.trim() || resolvedCatName,
-      status,
-      currency: editTx?.currency ?? currency,
-      notes: notes.trim() ? notes.trim() : undefined,
-      toAccountId: txType === "transfer" ? toAccountId : undefined,
-    };
+    // Same currency rule as the transaction path below: never infer from
+    // the active DISPLAY currency (Phase 2 fix) — an existing entry keeps
+    // whatever currency it already had; a new one takes its account's
+    // real currency.
+    const resolvedCurrency = editingEntity?.currency ?? accounts.find((a) => a.id === accountId)?.currency;
     try {
-      await saveEntry({ ...editTx, ...payload, id: entryIdRef.current });
+      if (isPlannedMode) {
+        const plannedPayload = {
+          date,
+          accountId,
+          categoryId,
+          type: txType,
+          amount: Number(amount),
+          description: description.trim() || resolvedCatName,
+          recurrence,
+          currency: resolvedCurrency,
+          toAccountId: txType === "transfer" ? toAccountId : undefined,
+        };
+        if (editPlanned) {
+          await updatePlanned(editPlanned.id, plannedPayload);
+        } else {
+          await addPlanned({ ...plannedPayload, status: "pending" });
+        }
+      } else {
+        entryIdRef.current ??= `tx-${crypto.randomUUID()}`;
+        const payload = {
+          date,
+          accountId,
+          categoryId,
+          type: txType,
+          amount: Number(amount),
+          description: description.trim() || resolvedCatName,
+          status,
+          currency: resolvedCurrency,
+          notes: notes.trim() ? notes.trim() : undefined,
+          toAccountId: txType === "transfer" ? toAccountId : undefined,
+        };
+        await saveEntry({ ...editTx, ...payload, id: entryIdRef.current });
+      }
       savingRef.current = false;
       closeForm();
     } catch (error) {
@@ -241,7 +291,7 @@ export function EntryForm({
         className="modal-overlay"
         role="dialog"
         aria-modal="true"
-        aria-label={`${editTx ? "Edit" : "Add"} ${kind.label}`}
+        aria-label={`${editingEntity ? "Edit" : isPlannedMode ? "Schedule" : "Add"} ${kind.label}`}
         onClick={(e) => {
           if (e.target === e.currentTarget) closeForm();
         }}
@@ -257,7 +307,7 @@ export function EntryForm({
                 Entry
               </p>
               <h2 className="mt-0.5 text-2xl font-semibold leading-tight text-primary-text">
-                {editTx ? "Edit" : "Add"} {kind.label.toLowerCase()}
+                {editTx ? "Edit" : editPlanned ? "Edit scheduled" : isPlannedMode ? "Schedule" : "Add"} {kind.label.toLowerCase()}
               </h2>
             </div>
             <button
@@ -277,8 +327,8 @@ export function EntryForm({
               <label className="min-w-0 flex-1">
                 <span className={labelCls}>
                   Amount · {activeCurrency.code}
-                  {editTx && editTx.currency && editTx.currency !== currency
-                    ? ` · stored in ${editTx.currency}`
+                  {editingEntity?.currency && editingEntity.currency !== currency
+                    ? ` · stored in ${editingEntity.currency}`
                     : ""}
                 </span>
                 <div className="relative">
@@ -413,22 +463,67 @@ export function EntryForm({
               </label>
             ) : null}
 
-            {/* Status */}
-            <label className="mt-3 block">
-              <span className={labelCls}>Status</span>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as Transaction["status"])}
-                aria-label="Status"
-                className={`${inputCls} h-9`}
+            {/* Schedule for later (new entries only — reuses the exact
+                Transfer-toggle visual pattern above) */}
+            {!editingEntity ? (
+              <button
+                type="button"
+                onClick={() => setScheduleForLater((s) => !s)}
+                aria-pressed={scheduleForLater}
+                className="mt-3 flex w-full items-center justify-between rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:bg-light-border focus-visible:ring-2 focus-visible:ring-blue/60"
               >
-                <option value="cleared">Cleared · counted now</option>
-                <option value="pending">Pending · not counted yet</option>
-                <option value="reconciled">Reconciled</option>
-              </select>
-            </label>
+                <span>
+                  <span className="block text-xs font-medium text-primary-text">Schedule for later</span>
+                  <span className="block text-[10px] text-muted-text">Save as upcoming — only counts once you pay it</span>
+                </span>
+                <span
+                  className={`flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${
+                    scheduleForLater ? "bg-blue" : "bg-border"
+                  }`}
+                >
+                  <span
+                    className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                      scheduleForLater ? "translate-x-4" : ""
+                    }`}
+                  />
+                </span>
+              </button>
+            ) : null}
 
-            {/* Notes */}
+            {/* Status (real transactions) / Repeat (planned entries) */}
+            {isPlannedMode ? (
+              <label className="mt-3 block">
+                <span className={labelCls}>Repeat</span>
+                <select
+                  value={recurrence}
+                  onChange={(e) => setRecurrence(e.target.value as Recurrence)}
+                  aria-label="Repeat"
+                  className={`${inputCls} h-9`}
+                >
+                  <option value="once">Once · doesn&apos;t repeat</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </label>
+            ) : (
+              <label className="mt-3 block">
+                <span className={labelCls}>Status</span>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as Transaction["status"])}
+                  aria-label="Status"
+                  className={`${inputCls} h-9`}
+                >
+                  <option value="cleared">Cleared · counted now</option>
+                  <option value="pending">Pending · not counted yet</option>
+                  <option value="reconciled">Reconciled</option>
+                </select>
+              </label>
+            )}
+
+            {/* Notes — PlannedTransaction has no notes field in the data
+                model, so this only applies to real transactions. */}
+            {!isPlannedMode ? (
             <button
               type="button"
               onClick={() => setShowNotes((s) => !s)}
@@ -436,7 +531,8 @@ export function EntryForm({
             >
               {showNotes ? "Hide notes" : "+ Add note"}
             </button>
-            {showNotes ? (
+            ) : null}
+            {!isPlannedMode && showNotes ? (
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -472,7 +568,13 @@ export function EntryForm({
                 disabled={!valid || saving}
                 className="h-10 flex-1 rounded-xl bg-blue text-xs font-semibold text-white transition-colors hover:bg-blue/90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-blue/60"
               >
-                {saving ? "Saving…" : editTx ? "Save changes" : `Add ${kind.label.toLowerCase()}`}
+                {saving
+                  ? "Saving…"
+                  : editingEntity
+                    ? "Save changes"
+                    : isPlannedMode
+                      ? `Schedule ${kind.label.toLowerCase()}`
+                      : `Add ${kind.label.toLowerCase()}`}
               </button>
             </div>
           </footer>
@@ -531,8 +633,11 @@ export function EntryForm({
               setShowAccountDialog(false);
               setNewAccountName("");
               setNewAccountOpening("0");
+              setAccountError(null);
             }}
             disabled={!newAccountName.trim()}
+            busy={savingAccount}
+            error={accountError}
           />,
           document.body
         )}
@@ -576,8 +681,11 @@ export function EntryForm({
             onCancel={() => {
               setShowCategoryDialog(false);
               setNewCategoryName("");
+              setCategoryError(null);
             }}
             disabled={!newCategoryName.trim()}
+            busy={savingCategory}
+            error={categoryError}
           />,
           document.body
         )}
@@ -592,16 +700,20 @@ function QuickAddDialog({
   onCreate,
   onCancel,
   disabled,
+  busy,
+  error,
 }: {
   title: string;
   fields: React.ReactNode;
   onCreate: () => void;
   onCancel: () => void;
   disabled: boolean;
+  busy?: boolean;
+  error?: string | null;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !busy) onCancel();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -610,7 +722,7 @@ function QuickAddDialog({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onCancel]);
+  }, [onCancel, busy]);
 
   return (
     <div
@@ -619,7 +731,7 @@ function QuickAddDialog({
       aria-modal="true"
       aria-label={title}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onCancel();
+        if (e.target === e.currentTarget && !busy) onCancel();
       }}
     >
       <div
@@ -631,33 +743,37 @@ function QuickAddDialog({
           <button
             type="button"
             onClick={onCancel}
+            disabled={busy}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-text transition-colors hover:bg-card hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-text transition-colors hover:bg-card hover:text-primary-text focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-40"
           >
             <XIcon className="h-4 w-4" />
           </button>
         </header>
 
-        <div className="modal-body px-4 py-4 md:px-5">
+        <fieldset disabled={busy} className="modal-body px-4 py-4 md:px-5">
           <div className="space-y-2.5">{fields}</div>
-        </div>
+        </fieldset>
+
+        {error ? <p role="alert" className="px-4 py-2 text-xs text-red-600">{error}</p> : null}
 
         <footer className="modal-footer">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onCancel}
-              className="h-10 rounded-xl border border-border bg-card px-4 text-xs font-medium text-secondary-text transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-blue/60"
+              disabled={busy}
+              className="h-10 rounded-xl border border-border bg-card px-4 text-xs font-medium text-secondary-text transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-40"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={onCreate}
-              disabled={disabled}
+              disabled={disabled || busy}
               className="h-10 flex-1 rounded-xl bg-blue text-xs font-semibold text-white transition-colors hover:bg-blue/90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-blue/60"
             >
-              Save
+              {busy ? "Saving…" : "Save"}
             </button>
           </div>
         </footer>

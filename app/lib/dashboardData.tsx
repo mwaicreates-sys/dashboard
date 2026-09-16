@@ -47,6 +47,7 @@ import {
   calculateTopSpendings,
   calculateProgress,
   calculateSavingsGoal,
+  isRealized,
 } from "@/lib/calculations";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
 import { addMonths } from "@/data/store";
@@ -111,24 +112,23 @@ interface DashboardContextValue extends DashboardState {
   setSelectedPeriodId: (id: string) => void;
   /** Select a calendar year that contains real data. */
   setSelectedYear: (year: number) => void;
-  toggleTodo: (id: string) => void;
-  addTodo: (text: string) => void;
-  updateGoal: (id: string, patch: Partial<NewEntity<Goal>>) => void;
-  updateAccountBalance: (id: string, balance: number) => void;
-  addTransaction: (tx: Omit<Transaction, "id">) => void;
+  updateGoal: (id: string, patch: Partial<NewEntity<Goal>>) => Promise<void>;
+  updateAccountBalance: (id: string, balance: number) => Promise<void>;
+  addTransaction: (tx: Omit<Transaction, "id">) => Promise<void>;
 
-    addActivity: (data: Omit<Activity, "id">) => void;
-  updateActivity: (id: string, patch: Partial<Omit<Activity, "id">>) => void;
-  updateActivityStatus: (id: string, status: ActivityStatus) => void;
-  deleteActivity: (id: string) => void;
+    addActivity: (data: Omit<Activity, "id">) => Promise<void>;
+  updateActivity: (id: string, patch: Partial<Omit<Activity, "id">>) => Promise<void>;
+  updateActivityStatus: (id: string, status: ActivityStatus) => Promise<void>;
+  deleteActivity: (id: string) => Promise<void>;
 
-  // ---- notifications & reminders ----
+  // ---- notifications ----
+  // Phase 6: the mutator actions (add/dismiss/mark-read/clear) and the
+  // derived alert feed were confirmed dead — zero consumers anywhere in
+  // the app (this feature has no reachable UI; see the Phase 5 report).
+  // Removed rather than left half-wired, per the Phase 6 dead-code
+  // instructions; `notifications` itself stays exposed since it is real,
+  // Supabase-synced business state (untouched here).
   notifications: Notification[];
-  addNotification: (data: Omit<Notification, "id">) => void;
-  dismissNotification: (id: string) => void;
-  markNotificationRead: (id: string) => void;
-  clearNotifications: () => void;
-  derivedNotifications: Notification[];
 
   // ---- day drill-down ----
   selectedDay: string | null;
@@ -144,7 +144,6 @@ interface DashboardContextValue extends DashboardState {
   activitiesForWeek: Activity[];
   budgetSummary: { totalBudgeted: number; totalActual: number; percentage: number; byMonth: Map<string, { budgeted: number; actual: number }> };
   upcomingRecurring: PlannedTransaction[];
-  notificationsCount: number;
 
   // ---- search & filtering ----
     dashboardFilter: DashboardFilter;
@@ -186,11 +185,14 @@ interface DashboardContextValue extends DashboardState {
   // ---- data-entry CRUD ----
   saveEntry: (tx: Transaction) => Promise<void>;
   flushCloudChanges: () => Promise<void>;
-  updateTransaction: (id: string, patch: Partial<Omit<Transaction, "id">>) => void;
-  deleteTransaction: (id: string) => void;
+  updateTransaction: (id: string, patch: Partial<Omit<Transaction, "id">>) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<void>;
   /**
    * Bulk-replace whole collections (demo data load / restore). Only the
-   * provided arrays are replaced; everything else stays untouched.
+   * provided arrays are replaced; everything else stays untouched. Used
+   * only by the cloud-hydration bootstrap itself — not a user-facing
+   * mutation, so it stays outside the durability contract (there's nothing
+   * to push: this data just came FROM the cloud).
    */
   replaceAllData: (data: {
     accounts?: Account[];
@@ -201,29 +203,33 @@ interface DashboardContextValue extends DashboardState {
     plannedTransactions?: PlannedTransaction[];
     activities?: Activity[];
   }) => void;
-  addAccount: (data: Omit<Account, "id" | "currentBalance">) => string;
-  updateAccount: (id: string, patch: Partial<NewEntity<Account>>) => void;
-  deleteAccount: (id: string) => void;
-  addCategory: (data: NewEntity<Category>) => string;
-  updateCategory: (id: string, patch: Partial<NewEntity<Category>>) => void;
-  deleteCategory: (id: string) => void;
-  addBudget: (data: NewEntity<Budget>) => void;
-  updateBudget: (id: string, patch: Partial<NewEntity<Budget>>) => void;
-  deleteBudget: (id: string) => void;
-  addGoal: (data: NewEntity<Goal>) => void;
-  deleteGoal: (id: string) => void;
-    updatePlanned: (id: string, patch: Partial<NewEntity<PlannedTransaction>>) => void;
-  addPlanned: (data: NewEntity<PlannedTransaction>) => void;
-  deletePlanned: (id: string) => void;
+  addAccount: (data: Omit<Account, "id" | "currentBalance">) => Promise<string>;
+  updateAccount: (id: string, patch: Partial<NewEntity<Account>>) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  addCategory: (data: NewEntity<Category>) => Promise<string>;
+  updateCategory: (id: string, patch: Partial<NewEntity<Category>>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+  addBudget: (data: NewEntity<Budget>) => Promise<void>;
+  updateBudget: (id: string, patch: Partial<NewEntity<Budget>>) => Promise<void>;
+  deleteBudget: (id: string) => Promise<void>;
+  addGoal: (data: NewEntity<Goal>) => Promise<void>;
+  deleteGoal: (id: string) => Promise<void>;
+    updatePlanned: (id: string, patch: Partial<NewEntity<PlannedTransaction>>) => Promise<void>;
+  addPlanned: (data: NewEntity<PlannedTransaction>) => Promise<void>;
+  deletePlanned: (id: string) => Promise<void>;
 
   // ---- payment workflow ----
   /** Pay a planned transaction: creates an actual Transaction, marks it
-   *  completed, and seeds the next occurrence for recurring items.
-   *  Idempotent — returns false if already paid or a transaction exists.
+   *  completed, and seeds the next occurrence for recurring items — all as
+   *  one atomic commit. Idempotent — resolves false if already paid or a
+   *  transaction exists. Callers MUST await this before treating the
+   *  payment as durable (Phase 3 fix for the previous fire-and-forget,
+   *  silently-losable version).
    */
-  payPlannedTransaction: (id: string) => boolean;
-  /** Cancel a pending planned transaction without creating a transaction. */
-  cancelPlannedTransaction: (id: string) => boolean;
+  payPlannedTransaction: (id: string) => Promise<boolean>;
+  /** Cancel a pending planned transaction without creating a transaction.
+   *  Callers must await this before treating it as durable. */
+  cancelPlannedTransaction: (id: string) => Promise<boolean>;
 }
 
 const DashboardContext = createContext<DashboardContextValue | null>(null);
@@ -238,8 +244,59 @@ const nextId = (prefix: string) => {
   return `${prefix}-${crypto.randomUUID()}`;
 };
 
+/**
+ * Phase 6 — DashboardProvider/context rerender fix.
+ *
+ * `actions` (the ~35 mutator functions the provider exposes — addAccount,
+ * updateBudget, payPlannedTransaction, etc.) is rebuilt from scratch every
+ * render, same as before: cheap, and each closure still always sees the
+ * current render's state/props. The problem this solves is downstream —
+ * those fresh closures used to be spread directly into the big context
+ * `value` object literal every render, so `value`'s reference changed on
+ * literally every render of DashboardProvider (even ones triggered only
+ * by a parent re-rendering, e.g. a route change via usePathname, with
+ * zero actual dashboard data changed) — and every one of the ~20+
+ * components calling useDashboardData() re-rendered in lockstep with it,
+ * because React context has no per-field granularity: any new `value`
+ * reference notifies every consumer, regardless of which fields it reads.
+ *
+ * `useStableActions` returns an object with the SAME keys/call signatures
+ * as `actions`, but whose top-level reference — and every individual
+ * function's reference — never changes for the life of the component.
+ * Each stable wrapper forwards to the CURRENT render's real implementation
+ * via a ref, so behavior is byte-for-byte identical to calling the real
+ * function directly (no staleness risk: the ref is updated every render,
+ * before any wrapper could be called). This lets the big `value` object
+ * be wrapped in `useMemo` with ONE stable dependency (the whole actions
+ * bundle) instead of ~35 volatile per-render closures, so `value` only
+ * gets a new reference when actual state/derived data changes — not on
+ * every render for any reason.
+ *
+ * Ref writes/reads happen only inside the layout effect and inside the
+ * wrapper closures themselves (called later, from event handlers) — never
+ * directly in the render body — per the react-hooks/refs rule.
+ */
+function useStableActions<T extends Record<string, unknown>>(actions: T): T {
+  const latest = useRef(actions);
+  useLayoutEffect(() => {
+    latest.current = actions;
+  });
+  const [stable] = useState<T>(() => {
+    const obj: Record<string, unknown> = {};
+    for (const key of Object.keys(actions)) {
+      obj[key] = (...args: unknown[]) =>
+        (latest.current as Record<string, (...a: unknown[]) => unknown>)[key](...args);
+    }
+    return obj as T;
+  });
+  return stable;
+}
+
 const accountDelta = (transactions: Transaction[], accountId: string) =>
   transactions.reduce((sum, t) => {
+    // Pending transactions are "not counted yet" (isRealized) — account
+    // balances must agree with every other realized-only total (Phase 2 fix).
+    if (!isRealized(t)) return sum;
     let delta = 0;
     if (t.accountId === accountId) {
       if (t.type === "income") delta += t.amount;
@@ -263,8 +320,14 @@ const recomputeBalances = (accounts: Account[], transactions: Transaction[]) =>
 const recomputeBudgetActuals = (budgets: Budget[], transactions: Transaction[]): Budget[] =>
   budgets.map((b) => ({
     ...b,
+    // Every type (including transfers into a debt/savings category) still
+    // counts toward budget usage — that divergence from Outflow Types/Top
+    // Spendings (which are expense-only, see calculations.ts) is deliberate:
+    // budget "spend against a category" and aggregate "business outflow"
+    // are different concepts. Pending transactions are excluded either way
+    // (Phase 2 fix) — "not counted yet" applies uniformly.
     actualAmount: transactions
-      .filter((t) => t.categoryId === b.categoryId && t.date.startsWith(b.month))
+      .filter((t) => t.categoryId === b.categoryId && t.date.startsWith(b.month) && isRealized(t))
       .reduce((sum: number, t: Transaction) => sum + t.amount, 0),
   }));
 
@@ -348,8 +411,12 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     for (const g of goals) set.add(goalBaseCurrency(g));
     for (const p of plannedTransactions) set.add(plannedBaseCurrency(p));
     return [...set];
+    // txBaseCurrency/plannedBaseCurrency read `accounts` (via acctCurrency);
+    // `accounts` is listed explicitly so an account-currency edit alone still
+    // recomputes this set (Phase 2 fix). The helper functions themselves stay
+    // out of the array — they're plain in-render closures, not memoized.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, goals, plannedTransactions]);
+  }, [transactions, goals, plannedTransactions, accounts]);
 
   /** Refresh/warm the cached rate(s) for `target`. One request per base,
    *  then all sync convertAmount calls reuse the stored snapshot. */
@@ -452,19 +519,28 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("accounts", accounts); }, [hydrated, cloudEnabled, cloudReady, accounts]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("transactions", transactions); }, [hydrated, cloudEnabled, cloudReady, transactions]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("categories", categories); }, [hydrated, cloudEnabled, cloudReady, categories]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("budgets", budgets); }, [hydrated, cloudEnabled, cloudReady, budgets]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("goals", goals); }, [hydrated, cloudEnabled, cloudReady, goals]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("planned", plannedTransactions); }, [hydrated, cloudEnabled, cloudReady, plannedTransactions]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("todos", todos); }, [hydrated, cloudEnabled, cloudReady, todos]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("year", effectiveYear); }, [hydrated, cloudEnabled, cloudReady, effectiveYear]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("currency", currency); }, [hydrated, cloudEnabled, cloudReady, currency]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("activities", activities); }, [hydrated, cloudEnabled, cloudReady, activities]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("selectedDay", selectedDay); }, [hydrated, cloudEnabled, cloudReady, selectedDay]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("notifications", notifications); }, [hydrated, cloudEnabled, cloudReady, notifications]);
-  useEffect(() => { if (hydrated && (!cloudEnabled || cloudReady)) saveToStorage("dashboardFilter", dashboardFilter); }, [hydrated, cloudEnabled, cloudReady, dashboardFilter]);
+  // Phase 6: these mirror local-only (demo) state into localStorage so the
+  // hydration effect above can read it back on the next visit. In CLOUD
+  // mode that read never happens — the hydration effect returns before any
+  // loadFromStorage call whenever `cloudEnabled` is true — so the previous
+  // `!cloudEnabled || cloudReady` guard was writing every collection
+  // (transactions/accounts/etc. included) to localStorage, unread, on
+  // every single mutation of a real cloud business. Scoping the guard to
+  // local-only mode removes that write entirely with no observable change
+  // (nothing ever consumed it in cloud mode).
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("accounts", accounts); }, [hydrated, cloudEnabled, accounts]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("transactions", transactions); }, [hydrated, cloudEnabled, transactions]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("categories", categories); }, [hydrated, cloudEnabled, categories]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("budgets", budgets); }, [hydrated, cloudEnabled, budgets]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("goals", goals); }, [hydrated, cloudEnabled, goals]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("planned", plannedTransactions); }, [hydrated, cloudEnabled, plannedTransactions]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("todos", todos); }, [hydrated, cloudEnabled, todos]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("year", effectiveYear); }, [hydrated, cloudEnabled, effectiveYear]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("currency", currency); }, [hydrated, cloudEnabled, currency]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("activities", activities); }, [hydrated, cloudEnabled, activities]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("selectedDay", selectedDay); }, [hydrated, cloudEnabled, selectedDay]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("notifications", notifications); }, [hydrated, cloudEnabled, notifications]);
+  useEffect(() => { if (hydrated && !cloudEnabled) saveToStorage("dashboardFilter", dashboardFilter); }, [hydrated, cloudEnabled, dashboardFilter]);
 
   // ---- display-currency views (RAW records stay untouched & recoverable) ----
   const displayTransactions = useMemo(
@@ -474,8 +550,12 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         amount: toDisplay(t.amount, txBaseCurrency(t)),
         currency: t.currency ?? txBaseCurrency(t),
       })),
+    // `accounts` is required: txBaseCurrency falls back to the transaction's
+    // account currency, so an account-currency edit alone must still
+    // recompute this view (Phase 2 fix — was previously stale until some
+    // unrelated dependency happened to change).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [transactions, currency, fxTick]
+    [transactions, currency, fxTick, accounts]
   );
 
   const displayAccounts = useMemo(
@@ -507,24 +587,45 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         amount: toDisplay(p.amount, plannedBaseCurrency(p)),
         currency: p.currency ?? plannedBaseCurrency(p),
       })),
+    // Same `accounts` requirement as displayTransactions above (Phase 2 fix).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plannedTransactions, currency, fxTick]
+    [plannedTransactions, currency, fxTick, accounts]
   );
+
+  // Phase 6: every one of the 9 calculations below independently
+  // re-filtered the FULL (all-years) displayTransactions array down to the
+  // selected period, each redoing the same date-range+isRealized pass —
+  // measurably wasteful for a business with multi-year history but only
+  // one year selected. Pre-filtering ONCE here and feeding the smaller,
+  // already-period-scoped array into every calculation is behaviorally
+  // identical: every one of these functions already ANDs `isRealized(t)`
+  // into its own filter and scopes to the exact same date range (directly,
+  // or via per-month `startsWith` against `period.months`, which covers
+  // the identical set of dates for a calendar-year period) — so their own
+  // internal filtering becomes a redundant-but-harmless no-op on an
+  // already-narrowed array, not a behavior change. See
+  // tests/dashboard-calculation-memo.test.tsx for the regression proof.
+  const periodTransactions = useMemo(() => {
+    const p = selectedPeriod || seedPeriods[0];
+    return displayTransactions.filter(
+      (t) => t.date >= p.startDate && t.date <= p.endDate && isRealized(t)
+    );
+  }, [displayTransactions, selectedPeriod]);
 
   // Every existing calculation now consumes display-currency values so all
   // KPIs, charts, monthlies, growth and goals agree on ONE conversion layer.
-  const kpis = useMemo(() => calculateKPIs(displayTransactions, displayAccounts, displayGoals, selectedPeriod || seedPeriods[0]), [displayTransactions, displayAccounts, displayGoals, selectedPeriod]);
-  const monthlyIncomeOutflow = useMemo(() => calculateMonthlyIncomeOutflow(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
-  const incomeSplit = useMemo(() => calculateIncomeSplit(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
-  const outflowTypes = useMemo(() => calculateOutflowTypes(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
-  const cumulativeGrowth = useMemo(() => calculateCumulativeGrowth(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
+  const kpis = useMemo(() => calculateKPIs(periodTransactions, displayAccounts, displayGoals, selectedPeriod || seedPeriods[0]), [periodTransactions, displayAccounts, displayGoals, selectedPeriod]);
+  const monthlyIncomeOutflow = useMemo(() => calculateMonthlyIncomeOutflow(periodTransactions, selectedPeriod || seedPeriods[0]), [periodTransactions, selectedPeriod]);
+  const incomeSplit = useMemo(() => calculateIncomeSplit(periodTransactions, categories, selectedPeriod || seedPeriods[0]), [periodTransactions, categories, selectedPeriod]);
+  const outflowTypes = useMemo(() => calculateOutflowTypes(periodTransactions, categories, selectedPeriod || seedPeriods[0]), [periodTransactions, categories, selectedPeriod]);
+  const cumulativeGrowth = useMemo(() => calculateCumulativeGrowth(periodTransactions, selectedPeriod || seedPeriods[0]), [periodTransactions, selectedPeriod]);
   const netWorthGrowth = useMemo(
-    () => calculateNetWorthGrowth(displayAccounts, displayTransactions, selectedPeriod || seedPeriods[0]),
-    [displayAccounts, displayTransactions, selectedPeriod]
+    () => calculateNetWorthGrowth(displayAccounts, periodTransactions, selectedPeriod || seedPeriods[0]),
+    [displayAccounts, periodTransactions, selectedPeriod]
   );
-  const incomeStreamStack = useMemo(() => calculateIncomeStreamStack(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
-  const topOutflows = useMemo(() => calculateTopOutflows(displayTransactions, selectedPeriod || seedPeriods[0]), [displayTransactions, selectedPeriod]);
-  const topSpendings = useMemo(() => calculateTopSpendings(displayTransactions, categories, selectedPeriod || seedPeriods[0]), [displayTransactions, categories, selectedPeriod]);
+  const incomeStreamStack = useMemo(() => calculateIncomeStreamStack(periodTransactions, categories, selectedPeriod || seedPeriods[0]), [periodTransactions, categories, selectedPeriod]);
+  const topOutflows = useMemo(() => calculateTopOutflows(periodTransactions, selectedPeriod || seedPeriods[0]), [periodTransactions, selectedPeriod]);
+  const topSpendings = useMemo(() => calculateTopSpendings(periodTransactions, categories, selectedPeriod || seedPeriods[0]), [periodTransactions, categories, selectedPeriod]);
   const progress = useMemo(() => calculateProgress(displayGoals), [displayGoals]);
   const savingsGoal = useMemo(() => calculateSavingsGoal(displayAccounts, displayGoals), [displayAccounts, displayGoals]);
 
@@ -603,21 +704,6 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [plannedTransactions]);
 
-    /** Unread notifications count */
-  const notificationsCount = useMemo(() => notifications.filter((n) => n.status === "unread").length, [notifications]);
-
-  /** Budgets that are approaching their limit (80%+ used) */
-  const budgetWarnings = useMemo(() => {
-    return budgets.filter((b) => b.plannedAmount > 0 && (b.actualAmount ?? 0) / b.plannedAmount >= 0.8).length;
-  }, [budgets]);
-
-    useEffect(() => {
-    const warnings = budgetWarnings;
-    if (warnings > 0 && notificationsCount === 0) {
-      // Could generate a notification here, but we keep it simple
-    }
-  }, [budgetWarnings, notificationsCount]);
-
     // ---- day drill-down derived data ----
   const effectiveDay = selectedDay ?? todayISO();
   const dayTransactions = useMemo(
@@ -633,97 +719,19 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     () => displayTransactions.filter((tx) => tx.date === todayISOValue),
     [displayTransactions, todayISOValue]
   );
+  // Phase 2 fixes, matching calculations.ts's rule exactly: pending
+  // transactions are excluded (isRealized), and a transfer between the
+  // user's own accounts is never counted as outflow at this aggregate
+  // level (it only moves money between individual account balances).
   const todayIncome = useMemo(
-    () => todayTxs.filter((tx) => tx.type === "income").reduce((sum, tx) => sum + tx.amount, 0),
+    () => todayTxs.filter((tx) => tx.type === "income" && isRealized(tx)).reduce((sum, tx) => sum + tx.amount, 0),
     [todayTxs]
   );
   const todayOutflow = useMemo(
-    () => todayTxs.filter((tx) => tx.type === "expense" || tx.type === "transfer").reduce((sum, tx) => sum + tx.amount, 0),
+    () => todayTxs.filter((tx) => tx.type === "expense" && isRealized(tx)).reduce((sum, tx) => sum + tx.amount, 0),
     [todayTxs]
   );
   const todayNet = todayIncome - todayOutflow;
-
-  /**
-   * Derived reminders computed from live data (never persisted, never fake):
-   * overdue/due-today activities, upcoming scheduled transactions within 7
-   * days, budgets ≥80% used this month, and a monthly-review nudge at
-   * month-end. Stored (user) notifications are appended after these.
-   */
-  const derivedNotifications = useMemo<Notification[]>(() => {
-    const today = todayISO();
-    const in7 = addDaysISO(today, 7);
-    const alerts: Notification[] = [];
-
-    for (const a of activities) {
-      if (!a.dueDate || a.status === "completed") continue;
-      if (a.dueDate < today) {
-        alerts.push({
-          id: `alert-overdue-${a.id}`,
-          title: "Activity overdue",
-          message: `“${a.title}” was due ${a.dueDate}.`,
-          type: "activity",
-          status: "unread",
-          date: a.dueDate,
-          actionLabel: "Review",
-          actionHref: undefined,
-        });
-      } else if (a.dueDate === today) {
-        alerts.push({
-          id: `alert-due-${a.id}`,
-          title: "Activity due today",
-          message: `“${a.title}” is due today.`,
-          type: "activity",
-          status: "unread",
-          date: a.dueDate,
-        });
-      }
-    }
-
-    const month = today.slice(0, 7);
-    for (const b of budgets) {
-      if (b.month !== month || b.plannedAmount <= 0) continue;
-      const pct = Math.round(((b.actualAmount ?? 0) / b.plannedAmount) * 100);
-      if (pct >= 80) {
-        const catName = categories.find((c) => c.id === b.categoryId)?.name ?? "Budget";
-        alerts.push({
-          id: `alert-budget-${b.id}`,
-          title: pct >= 100 ? "Budget exceeded" : "Budget approaching limit",
-          message: `${catName}: ${pct}% of this month's budget used.`,
-          type: "budget",
-          status: "unread",
-          date: today,
-        });
-      }
-    }
-
-    for (const p of plannedTransactions) {
-      if (p.status !== "pending" || p.date < today || p.date > in7) continue;
-      alerts.push({
-        id: `alert-recurring-${p.id}`,
-        title: p.recurrence && p.recurrence !== "once" ? "Recurring entry upcoming" : "Scheduled entry upcoming",
-        message: `${p.description} — expected ${p.date}.`,
-        type: "recurring",
-        status: "unread",
-        date: p.date,
-      });
-    }
-
-    const day = Number(today.slice(8, 10));
-    if (day >= 28) {
-      alerts.push({
-        id: "alert-monthly-review",
-        title: "Monthly review",
-        message: "The month is ending — review spending against your budget.",
-        type: "info",
-        status: "unread",
-        date: today,
-      });
-    }
-
-    return [...alerts, ...notifications]
-      .sort((x, y) => (y.date ?? "").localeCompare(x.date ?? ""))
-      .slice(0, 30);
-  }, [activities, budgets, categories, plannedTransactions, notifications]);
 
   const setDashboardFilter = (patch: Partial<DashboardFilter>) => {
     setDashboardFilterValue((prev) => ({ ...prev, ...patch }));
@@ -733,61 +741,110 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setDashboardFilterValue({});
   };
 
-  const toggleTodo = (id: string) => {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  /**
+   * Phase 3 durability contract — the single commit path every mutation in
+   * this provider goes through (saveEntry included, see below).
+   *
+   * `mutate` receives the latest known state and returns the next state.
+   * That next state is applied to React state immediately (optimistic —
+   * the UI reflects it without waiting), then handed to the save queue and
+   * AWAITED through to cloud acknowledgement. The returned promise:
+   *   - resolves only once Supabase has acknowledged the write — callers
+   *     must not treat their own "success" (closing a dialog, clearing an
+   *     input, toggling a checkbox as done) as true before this resolves;
+   *   - rejects if the write is refused. The optimistic local state is
+   *     deliberately NOT rolled back on rejection — it stays applied and
+   *     pending, matching the existing queue's retry-on-next-flush design
+   *     (dirty state means unsaved, not "gone"; see CloudSaveQueue). The
+   *     caller decides what a failure means for its own UI (keep a form
+   *     open, show an inline error, etc.) — see EntryForm for the
+   *     reference pattern this mirrors.
+   *
+   * In local-only mode (no Supabase configured) `queue` is always null and
+   * the guard below never fires, so this reduces to "apply and resolve" —
+   * identical to the previous synchronous behavior.
+   */
+  const commitMutation = async (mutate: (state: CloudState) => CloudState): Promise<CloudState> => {
+    const queue = saveQueueRef.current;
+    if (cloudEnabled && (!cloudReady || !queue || getAdminViewing())) {
+      throw new Error("Workspace is not ready for saving. Reload and try again.");
+    }
+    const current = latestStateRef.current;
+    if (!current) throw new Error("Workspace is still loading.");
+    const next = mutate(current);
+    latestStateRef.current = next;
+    queue?.observe(next);
+    setAccounts(next.accounts);
+    setTransactions(next.transactions);
+    setCategories(next.categories);
+    setBudgets(next.budgets);
+    setGoals(next.goals);
+    setPlannedTransactions(next.plannedTransactions);
+    setActivities(next.activities);
+    setNotifications(next.notifications);
+    setTodos(next.todos);
+    await queue?.flush();
+    return next;
   };
 
-  const addTodo = (text: string) => {
-    const newTodo: TodoRow = { id: `t-${Date.now()}`, text, done: false };
-    setTodos((prev) => [...prev, newTodo]);
-  };
+  // Phase 6: toggleTodo/addTodo removed — the only UI that called them
+  // (Checklist.tsx's TodoList) was confirmed unmounted anywhere in the app
+  // and deleted. `todos` state itself is untouched (still Supabase-synced).
 
   // ---- activities (day-to-day tracking) ----
-  const addActivity = (data: Omit<Activity, "id">) => {
-    setActivities((prev) => [
-      ...prev,
-      { id: `activity-${Date.now()}`, ...data, status: data.status ?? "pending" },
-    ]);
+  const addActivity = async (data: Omit<Activity, "id">) => {
+    await commitMutation((state) => ({
+      ...state,
+      activities: [...state.activities, { id: nextId("activity"), ...data, status: data.status ?? "pending" }],
+    }));
   };
 
-  const updateActivity = (id: string, patch: Partial<Omit<Activity, "id">>) => {
-    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const updateActivity = async (id: string, patch: Partial<Omit<Activity, "id">>) => {
+    await commitMutation((state) => ({
+      ...state, activities: state.activities.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
   };
 
-  const deleteActivity = (id: string) => {
-    setActivities((prev) => prev.filter((a) => a.id !== id));
+  const deleteActivity = async (id: string) => {
+    await commitMutation((state) => ({
+      ...state, activities: state.activities.filter((a) => a.id !== id),
+    }));
   };
 
-  const updateGoal = (id: string, patch: Partial<NewEntity<Goal>>) => {
-    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)));
+  const updateGoal = async (id: string, patch: Partial<NewEntity<Goal>>) => {
+    await commitMutation((state) => ({
+      ...state, goals: state.goals.map((g) => (g.id === id ? { ...g, ...patch } : g)),
+    }));
   };
 
   // ---- data-entry CRUD ----
 
-    const addTransaction = (tx: Omit<Transaction, "id">) => {
-    setTransactions((prev) => {
-      const next = [...prev, { ...tx, id: nextId("tx") }];
-      setAccounts((accs) => recomputeBalances(accs, next));
-      setBudgets((bs) => recomputeBudgetActuals(bs, next));
-      return next;
+  /** Internal only (payPlannedTransaction). Entry-form saves go through
+   *  saveEntry, which handles both create and edit in one commit. */
+  const addTransaction = async (tx: Omit<Transaction, "id">) => {
+    await commitMutation((state) => {
+      const next = [...state.transactions, { ...tx, id: nextId("tx") }];
+      return { ...state, transactions: next,
+        accounts: recomputeBalances(state.accounts, next),
+        budgets: recomputeBudgetActuals(state.budgets, next) };
     });
   };
 
-    const updateTransaction = (id: string, patch: Partial<Omit<Transaction, "id">>) => {
-    setTransactions((prev) => {
-      const next = prev.map((t) => (t.id === id ? { ...t, ...patch } : t));
-      setAccounts((accs) => recomputeBalances(accs, next));
-      setBudgets((bs) => recomputeBudgetActuals(bs, next));
-      return next;
+  const updateTransaction = async (id: string, patch: Partial<Omit<Transaction, "id">>) => {
+    await commitMutation((state) => {
+      const next = state.transactions.map((t) => (t.id === id ? { ...t, ...patch } : t));
+      return { ...state, transactions: next,
+        accounts: recomputeBalances(state.accounts, next),
+        budgets: recomputeBudgetActuals(state.budgets, next) };
     });
   };
 
-  const deleteTransaction = (id: string) => {
-    setTransactions((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      setAccounts((accs) => recomputeBalances(accs, next));
-      setBudgets((bs) => recomputeBudgetActuals(bs, next));
-      return next;
+  const deleteTransaction = async (id: string) => {
+    await commitMutation((state) => {
+      const next = state.transactions.filter((t) => t.id !== id);
+      return { ...state, transactions: next,
+        accounts: recomputeBalances(state.accounts, next),
+        budgets: recomputeBudgetActuals(state.budgets, next) };
     });
   };
 
@@ -838,74 +895,101 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setDashboardFilterValue({});
   };
 
-  const addAccount = (data: Omit<Account, "id" | "currentBalance">) => {
+  const addAccount = async (data: Omit<Account, "id" | "currentBalance">) => {
     const newId = nextId("a");
-    setAccounts((prev) => [...prev, { id: newId, ...data,
-      currentBalance: data.openingBalance, active: data.active ?? true }]);
+    await commitMutation((state) => ({
+      ...state,
+      accounts: [...state.accounts, { id: newId, ...data,
+        currentBalance: data.openingBalance, active: data.active ?? true }],
+    }));
     return newId;
   };
 
-  const updateAccount = (id: string, patch: Partial<NewEntity<Account>>) => {
-    setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const updateAccount = async (id: string, patch: Partial<NewEntity<Account>>) => {
+    await commitMutation((state) => ({
+      ...state, accounts: state.accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
   };
 
-  const deleteAccount = (id: string) => {
-    setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, active: false } : a)));
+  const deleteAccount = async (id: string) => {
+    await commitMutation((state) => ({
+      ...state, accounts: state.accounts.map((a) => (a.id === id ? { ...a, active: false } : a)),
+    }));
   };
 
-  const addCategory = (data: NewEntity<Category>) => {
+  const addCategory = async (data: NewEntity<Category>) => {
     const newId = nextId("c");
-    setCategories((prev) => [...prev, { id: newId, ...data }]);
+    await commitMutation((state) => ({
+      ...state, categories: [...state.categories, { id: newId, ...data }],
+    }));
     return newId;
   };
 
-  const updateCategory = (id: string, patch: Partial<NewEntity<Category>>) => {
-    setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const updateCategory = async (id: string, patch: Partial<NewEntity<Category>>) => {
+    await commitMutation((state) => ({
+      ...state, categories: state.categories.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
   };
 
-  const deleteCategory = (id: string) => {
-    setCategories((prev) => prev.filter((c) => c.id !== id));
+  const deleteCategory = async (id: string) => {
+    await commitMutation((state) => ({
+      ...state, categories: state.categories.filter((c) => c.id !== id),
+    }));
   };
 
-  const addBudget = (data: NewEntity<Budget>) => {
-    setBudgets((prev) => [
-      ...prev,
-      { id: nextId("b"), ...data },
-    ]);
+  const addBudget = async (data: NewEntity<Budget>) => {
+    // Recompute immediately: a budget created for a category that already
+    // has spending this month must show that spend right away, not just
+    // after the next unrelated transaction mutation happens to trigger a
+    // recompute elsewhere.
+    await commitMutation((state) => {
+      const budgets = [...state.budgets, { id: nextId("b"), ...data }];
+      return { ...state, budgets: recomputeBudgetActuals(budgets, state.transactions) };
+    });
   };
 
-  const updateBudget = (id: string, patch: Partial<NewEntity<Budget>>) => {
-    setBudgets((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+  const updateBudget = async (id: string, patch: Partial<NewEntity<Budget>>) => {
+    await commitMutation((state) => {
+      const budgets = state.budgets.map((b) => (b.id === id ? { ...b, ...patch } : b));
+      return { ...state, budgets: recomputeBudgetActuals(budgets, state.transactions) };
+    });
   };
 
-  const deleteBudget = (id: string) => {
-    setBudgets((prev) => prev.filter((b) => b.id !== id));
+  const deleteBudget = async (id: string) => {
+    await commitMutation((state) => ({
+      ...state, budgets: state.budgets.filter((b) => b.id !== id),
+    }));
   };
 
-  const addGoal = (data: NewEntity<Goal>) => {
-    setGoals((prev) => [
-      ...prev,
-      { id: nextId("g"), ...data, status: data.status ?? "active" },
-    ]);
+  const addGoal = async (data: NewEntity<Goal>) => {
+    await commitMutation((state) => ({
+      ...state, goals: [...state.goals, { id: nextId("g"), ...data, status: data.status ?? "active" }],
+    }));
   };
 
-  const deleteGoal = (id: string) => {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
+  const deleteGoal = async (id: string) => {
+    await commitMutation((state) => ({
+      ...state, goals: state.goals.filter((g) => g.id !== id),
+    }));
   };
 
-  const addPlanned = (data: NewEntity<PlannedTransaction>) => {
-    setPlannedTransactions((prev) => [
-      ...prev,
-      { id: nextId("p"), ...data, status: data.status ?? "pending" },
-    ]);
+  const addPlanned = async (data: NewEntity<PlannedTransaction>) => {
+    await commitMutation((state) => ({
+      ...state,
+      plannedTransactions: [...state.plannedTransactions, { id: nextId("p"), ...data, status: data.status ?? "pending" }],
+    }));
   };
 
-  const updatePlanned = (id: string, patch: Partial<NewEntity<PlannedTransaction>>) => {
-    setPlannedTransactions((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const updatePlanned = async (id: string, patch: Partial<NewEntity<PlannedTransaction>>) => {
+    await commitMutation((state) => ({
+      ...state, plannedTransactions: state.plannedTransactions.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    }));
   };
 
-    const deletePlanned = (id: string) => {
-    setPlannedTransactions((prev) => prev.filter((p) => p.id !== id));
+  const deletePlanned = async (id: string) => {
+    await commitMutation((state) => ({
+      ...state, plannedTransactions: state.plannedTransactions.filter((p) => p.id !== id),
+    }));
   };
 
   /**
@@ -913,20 +997,26 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
    *
    * 1. Idempotency guard (ref) prevents double-processing from rapid clicks
    *    or stale closure reads — survives re-renders without depending on
-   *    React state that is asynchronously updated.
+   *    React state that is asynchronously updated. Reserved BEFORE the
+   *    await so a second click during the in-flight commit is a no-op, and
+   *    released again if the commit is rejected so the user can retry.
    * 2. Duplicate protection: checks whether a Transaction with plannedId === id
    *    already exists. If so, does not create another.
-   * 3. Creates an actual Transaction (source of truth) with the planned tx's
-   *    details, status "cleared", and plannedId link.
-   * 4. addTransaction triggers recomputeBalances (account) + recomputeBudgetActuals.
-   * 5. Marks the planned transaction as "completed".
-   * 6. For recurring items, creates the next occurrence as a new pending entry.
+   * 3. Creates the actual Transaction (source of truth, status "cleared",
+   *    plannedId link), marks the planned entry completed, and — for
+   *    recurring items — seeds the next occurrence, ALL as one atomic
+   *    commitMutation call. This was previously three separate local
+   *    mutations (addTransaction, updatePlanned, addPlanned), each
+   *    fire-and-forget; a failure between them could leave a paid bill
+   *    with no transaction, or a transaction with no completed status.
+   *    Phase 3 fix: one commit, one cloud round-trip, all-or-nothing.
    *
    * @returns true if payment was newly processed, false if it was a no-op.
+   *   The caller MUST await this before treating the payment as durable.
    */
   const paidIdsRef = useRef<Set<string>>(new Set());
 
-  const payPlannedTransaction = (id: string): boolean => {
+  const payPlannedTransaction = async (id: string): Promise<boolean> => {
     // Double-click / re-render idempotency: once paid, never process again
     if (paidIdsRef.current.has(id)) return false;
 
@@ -948,89 +1038,93 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     if (existingTx) {
       // Transaction exists but planned not completed — sync status, no new tx
       paidIdsRef.current.add(id);
-      updatePlanned(id, { status: "completed" });
+      await updatePlanned(id, { status: "completed" });
       return false;
     }
 
-    // Create the actual transaction (transactions are the source of truth).
-    // addTransaction also triggers recomputeBalances + recomputeBudgetActuals.
-    addTransaction({
-      date: planned.date,
-      accountId: planned.accountId,
-      categoryId: planned.categoryId,
-      description: planned.description,
-      amount: planned.amount,
-      type: planned.type,
-      status: "cleared",
-      plannedId: id,
-      toAccountId: planned.toAccountId,
-      currency: planned.currency,
-    });
-
-    // Mark the planned transaction as completed and lock it
     paidIdsRef.current.add(id);
-    updatePlanned(id, { status: "completed" });
-
-    // Seed the next occurrence for recurring items (keeps each occurrence
-    // independently payable — paying August does not mark September as paid).
-    if (planned.recurrence === "monthly" || planned.recurrence === "yearly") {
-      const monthsToAdd = planned.recurrence === "monthly" ? 1 : 12;
-      addPlanned({
-        date: addMonths(planned.date, monthsToAdd),
-        accountId: planned.accountId,
-        categoryId: planned.categoryId,
-        description: planned.description,
-        amount: planned.amount,
-        type: planned.type,
-        status: "pending",
-        recurrence: planned.recurrence,
-        toAccountId: planned.toAccountId,
-        currency: planned.currency,
+    try {
+      await commitMutation((state) => {
+        const nextTransactions = [...state.transactions, {
+          id: nextId("tx"),
+          date: planned.date,
+          accountId: planned.accountId,
+          categoryId: planned.categoryId,
+          description: planned.description,
+          amount: planned.amount,
+          type: planned.type,
+          status: "cleared" as const,
+          plannedId: id,
+          toAccountId: planned.toAccountId,
+          currency: planned.currency,
+        }];
+        // Seed the next occurrence for recurring items (keeps each
+        // occurrence independently payable — paying August does not mark
+        // September as paid).
+        let nextPlanned = state.plannedTransactions.map((p) =>
+          p.id === id ? { ...p, status: "completed" as const } : p);
+        if (planned.recurrence === "monthly" || planned.recurrence === "yearly") {
+          const monthsToAdd = planned.recurrence === "monthly" ? 1 : 12;
+          nextPlanned = [...nextPlanned, {
+            id: nextId("p"),
+            date: addMonths(planned.date, monthsToAdd),
+            accountId: planned.accountId,
+            categoryId: planned.categoryId,
+            description: planned.description,
+            amount: planned.amount,
+            type: planned.type,
+            status: "pending" as const,
+            recurrence: planned.recurrence,
+            toAccountId: planned.toAccountId,
+            currency: planned.currency,
+          }];
+        }
+        return { ...state, transactions: nextTransactions, plannedTransactions: nextPlanned,
+          accounts: recomputeBalances(state.accounts, nextTransactions),
+          budgets: recomputeBudgetActuals(state.budgets, nextTransactions) };
       });
+    } catch (error) {
+      paidIdsRef.current.delete(id); // release the guard so a retry is possible
+      throw error;
     }
-
     return true;
   };
 
   /**
    * Cancel a planned transaction without creating an actual transaction.
-   * Does NOT affect account balances or budget actuals.
+   * Does NOT affect account balances or budget actuals. The caller must
+   * await this before treating the cancellation as durable.
    */
-  const cancelPlannedTransaction = (id: string): boolean => {
+  const cancelPlannedTransaction = async (id: string): Promise<boolean> => {
     const planned = plannedTransactions.find((p) => p.id === id);
     if (!planned || planned.status !== "pending") return false;
-    updatePlanned(id, { status: "cancelled" });
+    await updatePlanned(id, { status: "cancelled" });
     return true;
   };
 
-    const updateAccountBalance = (id: string, balance: number) => {
-    setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, currentBalance: balance } : a)));
+  const updateAccountBalance = async (id: string, balance: number) => {
+    await commitMutation((state) => ({
+      ...state, accounts: state.accounts.map((a) => (a.id === id ? { ...a, currentBalance: balance } : a)),
+    }));
   };
 
   // ---- activity status shorthand ----
-  const updateActivityStatus = (id: string, status: ActivityStatus) => {
-    setActivities((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
+  const updateActivityStatus = async (id: string, status: ActivityStatus) => {
+    await commitMutation((state) => ({
+      ...state, activities: state.activities.map((a) => (a.id === id ? { ...a, status } : a)),
+    }));
   };
 
   // ---- notifications ----
-    const addNotification = (data: Omit<Notification, "id">) => {
-    setNotifications((prev) => [
-      ...prev,
-      { id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, ...data, status: "unread" },
-    ]);
-  };
-
-  const dismissNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
-
-  const markNotificationRead = (id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  };
-
-  const clearNotifications = () => {
-    setNotifications([]);
-  };
+  // Phase 6: addNotification/dismissNotification/markNotificationRead/
+  // clearNotifications removed — confirmed zero consumers anywhere in the
+  // app (notifications have no reachable UI; see the Phase 5 report).
+  // markNotificationRead in particular wrote a `read` field the
+  // Notification model doesn't have (flagged as dead/broken since Phase
+  // 3) — removed rather than patched, per the Phase 6 instruction to
+  // remove a confirmed-dead broken path instead of inventing a fix for
+  // code nothing calls. `notifications` state itself is untouched (still
+  // Supabase-synced; no table or CloudState field was removed).
 
   // Resolve auth and tenant, then read cloud state before enabling any writes.
   useEffect(() => {
@@ -1238,27 +1332,18 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     await queue.flush();
   };
 
+  // Entry stays open until commit; stable IDs make retry safe after a
+  // timeout or a lost acknowledgement. Now a thin wrapper over
+  // commitMutation — the reference pattern every other mutator above follows.
   const saveEntry = async (tx: Transaction) => {
-    const queue = saveQueueRef.current;
-    if (cloudEnabled && (!cloudReady || !queue || getAdminViewing())) {
-      throw new Error("Workspace is not ready for saving. Reload and try again.");
-    }
-    const current = latestStateRef.current;
-    if (!current) throw new Error("Workspace is still loading.");
-    const nextTransactions = current.transactions.some((t) => t.id === tx.id)
-      ? current.transactions.map((t) => t.id === tx.id ? tx : t)
-      : [...current.transactions, tx];
-    const next = { ...current, transactions: nextTransactions,
-      accounts: recomputeBalances(current.accounts, nextTransactions),
-      budgets: recomputeBudgetActuals(current.budgets, nextTransactions) };
-    // Keep the existing immediate preview, but Entry stays open until commit.
-    // Stable IDs make retry safe after a timeout or a lost acknowledgement.
-    latestStateRef.current = next;
-    queue?.observe(next);
-    setTransactions(next.transactions);
-    setAccounts(next.accounts);
-    setBudgets(next.budgets);
-    await queue?.flush();
+    await commitMutation((state) => {
+      const nextTransactions = state.transactions.some((t) => t.id === tx.id)
+        ? state.transactions.map((t) => (t.id === tx.id ? tx : t))
+        : [...state.transactions, tx];
+      return { ...state, transactions: nextTransactions,
+        accounts: recomputeBalances(state.accounts, nextTransactions),
+        budgets: recomputeBudgetActuals(state.budgets, nextTransactions) };
+    });
   };
 
   useEffect(() => {
@@ -1267,74 +1352,24 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("online", retry);
   }, []);
 
-    const value: DashboardContextValue = {
-    accounts,
-    transactions,
-    categories,
-    budgets,
-    goals,
-    plannedTransactions,
-    todos,
-    selectedYear: effectiveYear,
-    availableYears,
-    activities,
-    selectedDay,
-    notifications,
-    dashboardFilter,
-    currency,
-    baseCurrency,
-    displayTransactions,
-    displayAccounts,
-    displayGoals,
-    displayPlannedTransactions,
-    fxState,
-    activeBusiness,
-    cloudSyncState,
+  // Rebuilt every render (cheap — each entry is either a plain function
+  // reference or a trivial inline closure); useStableActions is what makes
+  // the RESULT stable across renders, not this object itself. See the
+  // useStableActions doc comment above for why this two-step split exists.
+  const actions = {
     convertAmount: (value: number, from: string, to?: string): number =>
       convertAmount(value, from, to ?? currency) ?? value,
     replaceAllData,
-    selectedPeriodId,
-    periods,
-    selectedPeriod,
-    kpis,
-    monthlyIncomeOutflow,
-    incomeSplit,
-    outflowTypes,
-    cumulativeGrowth,
-    netWorthGrowth,
-    incomeStreamStack,
-    topOutflows,
-    topSpendings,
-    progress,
-    savingsGoal,
-        filteredTransactions,
-    dayTransactions,
-    dayActivities,
-    activitiesForWeek,
-    todayISO: todayISOValue,
-    todayIncome,
-    todayOutflow,
-    todayNet,
-    budgetSummary,
-    upcomingRecurring,
-    notificationsCount,
-    derivedNotifications,
     setSelectedPeriodId,
     setSelectedYear,
     setSelectedDay,
     setDashboardFilter,
     setCurrency: changeCurrency,
     clearDashboardFilter,
-    toggleTodo,
-    addTodo,
     addActivity,
     updateActivity,
     updateActivityStatus,
     deleteActivity,
-    addNotification,
-    dismissNotification,
-    markNotificationRead,
-    clearNotifications,
     updateGoal,
     updateAccountBalance,
     saveEntry,
@@ -1359,6 +1394,75 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     payPlannedTransaction,
     cancelPlannedTransaction,
   };
+  const stableActions = useStableActions(actions);
+
+  // Phase 6: memoized so a DashboardProvider re-render that changes none
+  // of these deps (e.g. a parent re-rendering for an unrelated reason)
+  // reuses the SAME `value` reference — React then skips notifying every
+  // useDashboardData() consumer entirely, instead of every one of them
+  // re-rendering on every provider render regardless of what changed.
+  // `stableActions` is the one dependency standing in for all ~35 action
+  // functions (see useStableActions above) — without it being stable,
+  // this useMemo would recompute every render anyway, defeating the point.
+  const value: DashboardContextValue = useMemo(() => ({
+    accounts,
+    transactions,
+    categories,
+    budgets,
+    goals,
+    plannedTransactions,
+    todos,
+    selectedYear: effectiveYear,
+    availableYears,
+    activities,
+    selectedDay,
+    notifications,
+    dashboardFilter,
+    currency,
+    baseCurrency,
+    displayTransactions,
+    displayAccounts,
+    displayGoals,
+    displayPlannedTransactions,
+    fxState,
+    activeBusiness,
+    cloudSyncState,
+    selectedPeriodId,
+    periods,
+    selectedPeriod,
+    kpis,
+    monthlyIncomeOutflow,
+    incomeSplit,
+    outflowTypes,
+    cumulativeGrowth,
+    netWorthGrowth,
+    incomeStreamStack,
+    topOutflows,
+    topSpendings,
+    progress,
+    savingsGoal,
+    filteredTransactions,
+    dayTransactions,
+    dayActivities,
+    activitiesForWeek,
+    todayISO: todayISOValue,
+    todayIncome,
+    todayOutflow,
+    todayNet,
+    budgetSummary,
+    upcomingRecurring,
+    ...stableActions,
+  }), [
+    accounts, transactions, categories, budgets, goals, plannedTransactions, todos,
+    effectiveYear, availableYears, activities, selectedDay, notifications, dashboardFilter,
+    currency, baseCurrency, displayTransactions, displayAccounts, displayGoals,
+    displayPlannedTransactions, fxState, activeBusiness, cloudSyncState, selectedPeriodId,
+    periods, selectedPeriod, kpis, monthlyIncomeOutflow, incomeSplit, outflowTypes,
+    cumulativeGrowth, netWorthGrowth, incomeStreamStack, topOutflows, topSpendings, progress,
+    savingsGoal, filteredTransactions, dayTransactions, dayActivities, activitiesForWeek,
+    todayISOValue, todayIncome, todayOutflow, todayNet, budgetSummary, upcomingRecurring,
+    stableActions,
+  ]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
 }

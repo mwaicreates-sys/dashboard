@@ -47,9 +47,23 @@ export async function legacyDatabase() {
       alter table public.${table} enable row level security;
       create policy ${table}_member_all on public.${table} for all
         using(public.is_business_member(business_id)) with check(public.is_business_member(business_id));`);
-    if (["accounts", "categories", "transactions", "budgets"].includes(table)) {
-      await db.exec(`create policy legacy_org on public.${table} for all
-        using(public.is_org_member(organization_id)) with check(public.is_org_member(organization_id));`);
+    // Named to match the REAL production policies exactly per table (verified
+    // live, Phase 4 — the naming is NOT uniform across tables in production,
+    // e.g. categories_update_admin vs transactions_update_member), so a
+    // migration that drops these by exact name can be tested faithfully.
+    const legacyPolicyNames: Record<string, string[]> = {
+      accounts: ["accounts_select_member", "accounts_insert_member", "accounts_update_member", "accounts_delete_admin"],
+      categories: ["categories_select_member", "categories_insert_member", "categories_update_admin", "categories_delete_admin"],
+      transactions: ["transactions_select_member", "transactions_insert_member", "transactions_update_member", "transactions_delete_member"],
+      budgets: ["budgets_select_member", "budgets_insert_member", "budgets_update_member", "budgets_delete_member"],
+    };
+    if (legacyPolicyNames[table]) {
+      const [selectP, insertP, updateP, deleteP] = legacyPolicyNames[table];
+      await db.exec(`
+        create policy ${selectP} on public.${table} for select using(public.is_org_member(organization_id));
+        create policy ${insertP} on public.${table} for insert with check(public.is_org_member(organization_id));
+        create policy ${updateP} on public.${table} for update using(public.is_org_member(organization_id)) with check(public.is_org_member(organization_id));
+        create policy ${deleteP} on public.${table} for delete using(public.is_org_member(organization_id));`);
     }
   }
   await db.exec(`

@@ -6,6 +6,7 @@ import { Activity, ActivityStatus } from "@/data/model/types";
 import { todayISO, getWeekRange, relativeDayLabel, shortDayLabel } from "@/lib/dates";
 import { PlusIcon, PencilIcon, TrashIcon, NotesIcon } from "./icons";
 import { GoalsProgress } from "./GoalsProgress";
+import { BudgetsSection } from "./BudgetsSection";
 
 type Filter = "all" | "today" | "upcoming" | "week" | "overdue" | "completed";
 
@@ -70,21 +71,37 @@ export function ActivityTab() {
   const doneCount = activities.filter((a) => a.status === "completed").length;
   const pendingCount = activities.length - doneCount;
 
-  const submit = (e: FormEvent) => {
+  // Phase 3: none of these may report success (clear the form, close the
+  // edit row, flip the checkbox) before Supabase has acknowledged the write.
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = title.trim();
-    if (!trimmed) return;
-    addActivity({
-      title: trimmed,
-      date: date || today,
-      notes: showNotes && notes.trim() ? notes.trim() : undefined,
-      dueDate: addDue || undefined,
-      status: "pending",
-    });
-    setTitle("");
-    setNotes("");
-    setAddDue("");
-    setShowNotes(false);
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await addActivity({
+        title: trimmed,
+        date: date || today,
+        notes: showNotes && notes.trim() ? notes.trim() : undefined,
+        dueDate: addDue || undefined,
+        status: "pending",
+      });
+      setTitle("");
+      setNotes("");
+      setAddDue("");
+      setShowNotes(false);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Could not save. Please retry.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const startEdit = (a: Activity) => {
@@ -94,25 +111,37 @@ export function ActivityTab() {
     setEditNotes(a.notes ?? "");
     setEditStatus(a.status);
     setEditDue(a.dueDate ?? "");
+    setEditError(null);
   };
 
-  const saveEdit = (id: string) => {
+  const saveEdit = async (id: string) => {
     const trimmed = editTitle.trim();
-    if (!trimmed) return;
-    updateActivity(id, {
-      title: trimmed,
-      date: editDate || today,
-      notes: editNotes.trim() ? editNotes.trim() : undefined,
-      status: editStatus,
-      dueDate: editDue || undefined,
-    });
-    setEditingId(null);
+    if (!trimmed || savingEdit) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      await updateActivity(id, {
+        title: trimmed,
+        date: editDate || today,
+        notes: editNotes.trim() ? editNotes.trim() : undefined,
+        status: editStatus,
+        dueDate: editDue || undefined,
+      });
+      setEditingId(null);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Could not save. Please retry.");
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
-  const toggleDone = (a: Activity) => {
-    updateActivity(a.id, {
-      status: a.status === "completed" ? "pending" : "completed",
-    });
+  const toggleDone = async (a: Activity) => {
+    try {
+      await updateActivity(a.id, { status: a.status === "completed" ? "pending" : "completed" });
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not save. Please retry.");
+    }
   };
 
   return (
@@ -174,12 +203,14 @@ export function ActivityTab() {
 
         <button
           type="submit"
+          disabled={submitting}
           aria-label="Add activity"
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue text-sm font-semibold text-white transition-colors hover:bg-blue/90 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.97] sm:w-auto sm:px-6"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue text-sm font-semibold text-white transition-colors hover:bg-blue/90 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.97] disabled:opacity-50 sm:w-auto sm:px-6"
         >
           <PlusIcon className="h-5 w-5" strokeWidth={2.2} />
-          Add
+          {submitting ? "Saving…" : "Add"}
         </button>
+        {submitError ? <p role="alert" className="mt-2 text-[11px] font-medium text-red-600">{submitError}</p> : null}
 
         <div className="mt-2.5 flex items-center justify-between">
           <button
@@ -203,6 +234,12 @@ export function ActivityTab() {
           />
         ) : null}
       </form>
+
+      {actionError ? (
+        <p role="alert" className="rounded-xl border border-orange/30 bg-orange/5 px-3 py-2 text-xs font-medium text-orange">
+          {actionError}
+        </p>
+      ) : null}
 
       {/* Goals (left) + To-Do review (right) */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start">
@@ -317,19 +354,22 @@ export function ActivityTab() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => saveEdit(a.id)}
-                          className="rounded-lg bg-blue px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-blue/90"
+                          onClick={() => void saveEdit(a.id)}
+                          disabled={savingEdit}
+                          className="rounded-lg bg-blue px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-blue/90 disabled:opacity-50"
                         >
-                          Save
+                          {savingEdit ? "Saving…" : "Save"}
                         </button>
                         <button
                           type="button"
-                          onClick={() => setEditingId(null)}
-                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[11px] text-secondary-text transition-colors hover:bg-light-border"
+                          onClick={() => { setEditingId(null); setEditError(null); }}
+                          disabled={savingEdit}
+                          className="rounded-lg border border-border bg-card px-3 py-1.5 text-[11px] text-secondary-text transition-colors hover:bg-light-border disabled:opacity-50"
                         >
                           Cancel
                         </button>
                       </div>
+                      {editError ? <p role="alert" className="text-[10px] font-medium text-red-600">{editError}</p> : null}
                     </div>
                   ) : (
                     <div
@@ -375,7 +415,11 @@ export function ActivityTab() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => deleteActivity(a.id)}
+                              onClick={() => {
+                                deleteActivity(a.id).catch((error) => {
+                                  setActionError(error instanceof Error ? error.message : "Could not delete. Please retry.");
+                                });
+                              }}
                               aria-label="Delete activity"
                               className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-text transition-colors hover:bg-card hover:text-orange focus-visible:ring-2 focus-visible:ring-blue/60"
                             >
@@ -407,6 +451,11 @@ export function ActivityTab() {
         </div>
         </section>
       </div>
+
+      {/* Phase 5: budgets had full backend support but no UI at all — added
+          as its own card below, matching the existing card style rather
+          than disturbing the Goals/To-Do grid above. */}
+      <BudgetsSection />
     </div>
   );
 }

@@ -35,6 +35,7 @@ const SYNC_COPY: Record<string, SyncCopy> = {
   synced: { dot: "bg-green", text: "All changes saved to your business workspace." },
   offline: { dot: "bg-orange", text: "Cloud save is not confirmed. Reconnect and retry." },
   error: { dot: "bg-orange", text: "Cloud save failed. Keep this workspace open and retry." },
+  conflict: { dot: "bg-red-500", text: "This workspace changed elsewhere. Reload the page to continue." },
 };
 
 export function CloudAccountCard() {

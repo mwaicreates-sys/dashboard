@@ -9,6 +9,7 @@ import {
   todayISO,
 } from "@/lib/dates";
 import { XIcon, PlusIcon, NotesIcon, CheckIcon, ClockIcon } from "./icons";
+import { isRealized } from "@/lib/calculations";
 
 interface DayViewProps {
   day: string;
@@ -24,6 +25,11 @@ export function DayView({ day, onClose }: DayViewProps) {
     useDashboardData();
 
   const [title, setTitle] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Shared by the toggle-done and delete controls below — Phase 3: neither
+  // may look successful before Supabase acknowledges it.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Keep global selected-day in sync so Week/Year views can highlight it.
   useEffect(() => {
@@ -49,9 +55,13 @@ export function DayView({ day, onClose }: DayViewProps) {
   const dayTx = useMemo(() => displayTransactions.filter((t) => t.date === day), [displayTransactions, day]);
   const dayActs = useMemo(() => activities.filter((a) => a.date === day), [activities, day]);
 
-  const income = dayTx.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  // Phase 2 fixes: pending transactions are "not counted yet" (isRealized),
+  // and a transfer between the user's own accounts is never outflow at this
+  // aggregate level — matching calculations.ts's rule exactly, so this
+  // summary always agrees with the dashboard KPIs for the same day.
+  const income = dayTx.filter((t) => t.type === "income" && isRealized(t)).reduce((s, t) => s + t.amount, 0);
   const outflow = dayTx
-    .filter((t) => t.type === "expense" || t.type === "transfer")
+    .filter((t) => t.type === "expense" && isRealized(t))
     .reduce((s, t) => s + t.amount, 0);
   const net = income - outflow;
 
@@ -60,12 +70,38 @@ export function DayView({ day, onClose }: DayViewProps) {
   const today = todayISO();
   const isOverdue = (due?: string, status?: string) => !!due && due < today && status !== "completed";
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = title.trim();
-    if (!trimmed) return;
-    addActivity({ title: trimmed, date: day, status: "pending" });
-    setTitle("");
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await addActivity({ title: trimmed, date: day, status: "pending" });
+      setTitle("");
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Could not save. Please retry.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const guardedUpdateActivity: typeof updateActivity = async (id, patch) => {
+    try {
+      await updateActivity(id, patch);
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not save. Please retry.");
+    }
+  };
+
+  const guardedDeleteActivity: typeof deleteActivity = async (id) => {
+    try {
+      await deleteActivity(id);
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not delete. Please retry.");
+    }
   };
 
   return (
@@ -93,8 +129,11 @@ export function DayView({ day, onClose }: DayViewProps) {
             title={title}
             setTitle={setTitle}
             submit={submit}
-            updateActivity={updateActivity}
-            deleteActivity={deleteActivity}
+            submitting={submitting}
+            submitError={submitError}
+            updateActivity={guardedUpdateActivity}
+            deleteActivity={guardedDeleteActivity}
+            actionError={actionError}
             isOverdue={isOverdue}
           />
         </div>
@@ -218,16 +257,22 @@ function ActivitiesSection({
   title,
   setTitle,
   submit,
+  submitting,
+  submitError,
   updateActivity,
   deleteActivity,
+  actionError,
   isOverdue,
 }: {
   dayActs: Act[];
   title: string;
   setTitle: (v: string) => void;
   submit: (e: FormEvent) => void;
+  submitting: boolean;
+  submitError: string | null;
   updateActivity: (id: string, patch: Partial<Omit<Act, "id">>) => void;
   deleteActivity: (id: string) => void;
+  actionError: string | null;
   isOverdue: (due?: string, status?: string) => boolean;
 }) {
   return (
@@ -242,16 +287,20 @@ function ActivitiesSection({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Add an activity for this day…"
           aria-label="New activity for this day"
-          className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-xs text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60"
+          disabled={submitting}
+          className="h-9 min-w-0 flex-1 rounded-xl border border-border bg-card px-3 text-xs text-primary-text outline-none transition-colors placeholder:text-muted-text focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-50"
         />
         <button
           type="submit"
+          disabled={submitting}
           aria-label="Add activity"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue text-white transition-colors hover:bg-blue/90 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.97]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue text-white transition-colors hover:bg-blue/90 focus-visible:ring-2 focus-visible:ring-blue/60 active:scale-[0.97] disabled:opacity-50"
         >
           <PlusIcon className="h-4 w-4" strokeWidth={2.2} />
         </button>
       </form>
+      {submitError ? <p role="alert" className="mb-2 text-[10px] font-medium text-red-600">{submitError}</p> : null}
+      {actionError ? <p role="alert" className="mb-2 text-[10px] font-medium text-red-600">{actionError}</p> : null}
 
       {dayActs.length === 0 ? (
         <p className="rounded-xl border border-border bg-card/40 px-3 py-3 text-center text-[11px] text-muted-text">

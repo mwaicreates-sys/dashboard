@@ -6,7 +6,7 @@ import type { CloudState } from "@/lib/cloudSync";
 
 const transport = vi.hoisted(() => ({ rpc: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ getSupabaseBrowserClient: () => transport }));
-import { pullBusinessState, pushBusinessState, businessChanges } from "@/lib/cloudSync";
+import { pullBusinessState, pushBusinessState, businessChanges, ConflictError } from "@/lib/cloudSync";
 import { CloudSaveQueue } from "@/lib/cloudSaveQueue";
 
 let db: PGlite;
@@ -94,6 +94,30 @@ describe.sequential("real PostgreSQL migration and application persistence path"
     const restored = await pullBusinessState(BUSINESS_A);
     expect(restored.transactions.find((t) => t.id === "test-entry")?.amount).toBe(8);
     expect(restored.transactions.some((t) => t.id === "must-rollback")).toBe(false);
+  });
+
+  it("TEST J / conflict typing (Phase 3): a stale-row rejection is a real ConflictError, not a generic Error — CloudSaveQueue's stale-retry-loop fix depends on this exact type", async () => {
+    // Uses its own dedicated record (not test-entry, which later tests in
+    // this sequential suite depend on) so this test doesn't disturb
+    // downstream fixture state.
+    const before = await pullBusinessState(BUSINESS_A);
+    await pushBusinessState(BUSINESS_A, entry(before, "conflict-typing-record", 1), before);
+    const tabA = await pullBusinessState(BUSINESS_A); // Tab A and Tab B both at revision N
+    const tabB = tabA;
+    const editAmount = (state: CloudState, amount: number) => ({
+      ...state, transactions: state.transactions.map((t) => t.id === "conflict-typing-record" ? { ...t, amount } : t),
+    });
+    await pushBusinessState(BUSINESS_A, editAmount(tabA, 2), tabA); // Tab A saves → revision N+1
+    try {
+      // Tab B still thinks it's at revision N — must be rejected, not
+      // silently overwrite Tab A's already-committed N+1.
+      await pushBusinessState(BUSINESS_A, editAmount(tabB, 3), tabB);
+      expect.unreachable("expected a conflict rejection");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConflictError);
+    }
+    const restored = await pullBusinessState(BUSINESS_A);
+    expect(restored.transactions.find((t) => t.id === "conflict-typing-record")?.amount).toBe(2); // Tab A's write wins; Tab B never applied
   });
 
   it("supports new accounts/categories/budgets and updates legacy rows without changing org links", async () => {
@@ -186,6 +210,24 @@ describe.sequential("real PostgreSQL migration and application persistence path"
     const result = await transport.rpc("read_business_state", { p_business_id: BUSINESS_A });
     expect(result.error.code).toBe("42501");
     await asUser(db, USER_A);
+  });
+
+  it("TEST H (Phase 3): a record created by another session after this client's hydration is never deleted by an unrelated local push", async () => {
+    // Client 1 hydrates first (its snapshot does not contain what client 2
+    // is about to create — this is the exact "stale local snapshot" shape
+    // the audit flagged, not the already-covered "two additions" case).
+    const client1Baseline = await pullBusinessState(BUSINESS_A);
+    // Client 2 (a separate session/tab) independently creates a new record.
+    const client2Before = await pullBusinessState(BUSINESS_A);
+    await pushBusinessState(BUSINESS_A, entry(client2Before, "other-session-record"), client2Before);
+    // Client 1 now makes its own, entirely unrelated, local edit and pushes
+    // — using its OLD baseline, which never knew "other-session-record"
+    // existed. If deletion were driven by "absent from my local snapshot"
+    // (the pre-rewrite bug class), this push would delete it.
+    await pushBusinessState(BUSINESS_A, entry(client1Baseline, "client1-record"), client1Baseline);
+    const restored = await pullBusinessState(BUSINESS_A);
+    expect(restored.transactions.some((t) => t.id === "other-session-record")).toBe(true);
+    expect(restored.transactions.some((t) => t.id === "client1-record")).toBe(true);
   });
 
   it("keeps failed writes dirty and retries the exact uncertain batch before newer edits", async () => {

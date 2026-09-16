@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatMoneyFull, shortDayLabel, todayISO, addDaysISO } from "@/lib/dates";
 import { RepeatIcon, CheckIcon, XIcon } from "./icons";
@@ -19,6 +19,18 @@ const RECURRENCE_LABEL: Record<string, string> = {
 export function RecurringSection() {
   const { displayPlannedTransactions, categories, accounts, payPlannedTransaction, cancelPlannedTransaction } =
     useDashboardData();
+
+  // Phase 3: pay/cancel are no longer fire-and-forget — a rejected write
+  // surfaces here instead of silently leaving a false "it worked" impression.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const runAction = async (action: () => Promise<unknown>) => {
+    try {
+      await action();
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not save. Please try again.");
+    }
+  };
 
   const today = todayISO();
   const horizon = addDaysISO(today, 30);
@@ -54,6 +66,12 @@ export function RecurringSection() {
       <p className="mb-3 text-[10px] leading-relaxed text-muted-text">
         Planned items only count once paid.
       </p>
+
+      {actionError ? (
+        <p role="alert" className="mb-3 rounded-xl border border-orange/30 bg-orange/5 px-3 py-2 text-[11px] font-medium text-orange">
+          {actionError}
+        </p>
+      ) : null}
 
       {upcoming.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-4 text-center text-[11px] text-muted-text">
@@ -97,7 +115,7 @@ export function RecurringSection() {
               <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => payPlannedTransaction(p.id)}
+                  onClick={() => void runAction(() => payPlannedTransaction(p.id))}
                   aria-label={`Mark ${p.description} as paid`}
                   title="Mark as paid — records an actual transaction"
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-green/40 text-green transition-colors hover:bg-green/10 focus-visible:ring-2 focus-visible:ring-green/50"
@@ -106,7 +124,7 @@ export function RecurringSection() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => cancelPlannedTransaction(p.id)}
+                  onClick={() => void runAction(() => cancelPlannedTransaction(p.id))}
                   aria-label={`Cancel ${p.description}`}
                   title="Cancel this scheduled entry"
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-muted-text transition-colors hover:border-orange/50 hover:text-orange focus-visible:ring-2 focus-visible:ring-orange/50"

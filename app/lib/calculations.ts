@@ -13,6 +13,37 @@ import {
   ProgressRow,
 } from "@/data/model/types";
 import { formatCurrencyCompact } from "@/lib/currency";
+import { MONTH_SHORT } from "@/lib/dates";
+
+/**
+ * "Jan".."Dec" for a "YYYY-MM" key, without going through Date parsing.
+ *
+ * `new Date("YYYY-MM-01")` parses as UTC midnight (no time component), so
+ * `.toLocaleString(..., { month: "short" })` on it renders in the VIEWER'S
+ * LOCAL timezone — for anyone west of UTC (all of the Americas), that
+ * shifts the displayed label back by one month (e.g. "2026-01" rendered
+ * "Dec" instead of "Jan"). Indexing the month straight out of the key
+ * string is timezone-independent and always correct.
+ */
+function monthShortLabel(monthKey: string): string {
+  return MONTH_SHORT[Number(monthKey.slice(5, 7)) - 1];
+}
+
+/**
+ * The realized-transactions rule (Phase 2 financial-integrity fix).
+ *
+ * EntryForm's own status field tells the user "Pending · not counted yet" —
+ * so every aggregate financial calculation (KPIs, charts, monthly/yearly
+ * totals, budget actuals, account balances) must exclude pending
+ * transactions. Transaction LISTS (Entry/history, exports' raw rows, Day
+ * view) are unaffected — pending entries stay visible there with their
+ * status shown; only aggregate totals filter through this predicate. Every
+ * consumer of this rule must import it from here rather than re-deriving
+ * its own status check, so the whole app agrees on one definition.
+ */
+export function isRealized(t: Pick<Transaction, "status">): boolean {
+  return t.status !== "pending";
+}
 
 function hashString(input: string): number {
   let hash = 0;
@@ -104,7 +135,9 @@ export function calculateKPIs(
   goals: Goal[],
   period: PeriodConfig
 ): DashboardKPI[] {
-  const periodTx = transactions.filter((t) => t.date >= period.startDate && t.date <= period.endDate);
+  const periodTx = transactions.filter(
+    (t) => t.date >= period.startDate && t.date <= period.endDate && isRealized(t)
+  );
 
   const totalIncome = periodTx
     .filter((t) => t.type === "income")
@@ -128,7 +161,12 @@ export function calculateKPIs(
 
   const savingsPercentage = totalIncome > 0 ? Math.round(((totalIncome - totalOutflow) / totalIncome) * 100) : 0;
   const spentPercentage = totalIncome > 0 ? Math.round((totalOutflow / totalIncome) * 100) : 0;
-  const investmentTarget = goals.find((g) => g.name.includes("retirement"))?.targetAmount || 20000;
+  // Case-insensitive so "Retirement", "RETIREMENT" and "retirement" all
+  // match consistently (Phase 2 fix). Still name-substring based — the
+  // schema has no dedicated goal-category field, so a goal titled
+  // differently still falls back to the placeholder target below. A real
+  // fix needs a `category`/`kind` column on goals (future schema work).
+  const investmentTarget = goals.find((g) => g.name.toLowerCase().includes("retirement"))?.targetAmount || 20000;
   const investmentPercentage = investmentTarget > 0 ? Math.round((investmentBalance / investmentTarget) * 100) : 0;
   // Baseline debt comes from the (converted) opening balances so the ratio
   // stays currency-consistent no matter which display currency is active.
@@ -150,10 +188,10 @@ export function calculateMonthlyIncomeOutflow(
   period: PeriodConfig
 ): MonthlyBarRow[] {
   return period.months.map((month) => {
-    const monthTx = transactions.filter((t) => t.date.startsWith(month));
+    const monthTx = transactions.filter((t) => t.date.startsWith(month) && isRealized(t));
     const income = monthTx.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
     const outflow = monthTx.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
-    const label = new Date(month + "-01").toLocaleString("en-US", { month: "short" });
+    const label = monthShortLabel(month);
     return { month: label, income, outflow };
   });
 }
@@ -163,7 +201,9 @@ export function calculateIncomeSplit(
   categories: Category[],
   period: PeriodConfig
 ): DonutRow[] {
-  const periodTx = transactions.filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "income");
+  const periodTx = transactions.filter(
+    (t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "income" && isRealized(t)
+  );
   const total = periodTx.reduce((sum, t) => sum + t.amount, 0);
   const incomeCategories = categories.filter((c) => c.type === "income");
   const colors = categoryColors(incomeCategories);
@@ -180,7 +220,9 @@ export function calculateOutflowTypes(
   categories: Category[],
   period: PeriodConfig
 ): DonutRow[] {
-  const periodTx = transactions.filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense");
+  const periodTx = transactions.filter(
+    (t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense" && isRealized(t)
+  );
   const total = periodTx.reduce((sum, t) => sum + t.amount, 0);
   const expenseCategories = categories.filter((c) => c.type === "expense");
   const colors = categoryColors(expenseCategories);
@@ -198,11 +240,11 @@ export function calculateCumulativeGrowth(
 ): HeaderChartRow[] {
   let cumulative = 0;
   return period.months.map((month) => {
-    const monthTx = transactions.filter((t) => t.date.startsWith(month));
+    const monthTx = transactions.filter((t) => t.date.startsWith(month) && isRealized(t));
     const income = monthTx.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
     const outflow = monthTx.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
     cumulative += income - outflow;
-    const label = new Date(month + "-01").toLocaleString("en-US", { month: "short" });
+    const label = monthShortLabel(month);
     return { month: label, value: Math.round(cumulative / 100) };
   });
 }
@@ -237,7 +279,8 @@ export function calculateNetWorthGrowth(
   for (const t of transactions) {
     // Only income and expense move total net worth. Transfers shift money
     // between accounts and net to zero, so they are intentionally excluded.
-    if (t.type === "transfer") continue;
+    // Pending transactions are excluded too — "not counted yet" (isRealized).
+    if (t.type === "transfer" || !isRealized(t)) continue;
     const month = t.date.slice(0, 7); // "YYYY-MM"
     if (!monthlyNet.has(month)) continue;
     const sign = t.type === "income" ? 1 : -1;
@@ -254,7 +297,7 @@ export function calculateNetWorthGrowth(
   return period.months.map((month) => {
     cumulative += monthlyNet.get(month) ?? 0;
     const value = openingNW + cumulative;
-    const label = new Date(month + "-01").toLocaleString("en-US", { month: "short" });
+    const label = monthShortLabel(month);
     return { month: label, value: Math.round(value) };
   });
 }
@@ -276,7 +319,7 @@ export function calculateIncomeStreamStack(
 
   for (const month of period.months) {
     const monthRecord: Record<string, number> = {};
-    const monthTx = transactions.filter((t) => t.date.startsWith(month) && t.type === "income");
+    const monthTx = transactions.filter((t) => t.date.startsWith(month) && t.type === "income" && isRealized(t));
 
     for (const category of incomeCategories) {
       const key = chartKeyForCategory(category.name);
@@ -309,7 +352,7 @@ export function calculateTopOutflows(
   period: PeriodConfig
 ): OutflowRow[] {
   const periodTx = transactions
-    .filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense");
+    .filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense" && isRealized(t));
 
   const totalsByDesc: Record<string, number> = {};
   for (const t of periodTx) {
@@ -332,7 +375,9 @@ export function calculateTopSpendings(
   categories: Category[],
   period: PeriodConfig
 ): SpendingRow[] {
-  const periodTx = transactions.filter((t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense");
+  const periodTx = transactions.filter(
+    (t) => t.date >= period.startDate && t.date <= period.endDate && t.type === "expense" && isRealized(t)
+  );
   const categoryTotals: Record<string, number> = {};
   for (const t of periodTx) {
     categoryTotals[t.categoryId] = (categoryTotals[t.categoryId] || 0) + t.amount;
@@ -367,7 +412,8 @@ export function calculateSavingsGoal(accounts: Account[], goals: Goal[]): DonutR
     .filter((a) => a.type === "savings")
     .reduce((sum, a) => sum + a.currentBalance, 0);
 
-  const emergencyGoal = goals.find((g) => g.name.includes("emergency"));
+  // Case-insensitive for the same reason as the retirement match above.
+  const emergencyGoal = goals.find((g) => g.name.toLowerCase().includes("emergency"));
   const target = emergencyGoal?.targetAmount || 25000;
   const saved = Math.min(savingsBalance, target);
   const remaining = Math.max(target - saved, 0);

@@ -6,6 +6,7 @@ import { Transaction } from "@/data/model/types";
 import { getWeeksOfYear, shortDayLabel, weekRangeLabel, formatMoney, todayISO, relativeDayLabel } from "@/lib/dates";
 import { ChevronDownIcon } from "./icons";
 import { DayView } from "./DayView";
+import { isRealized } from "@/lib/calculations";
 
 interface TxByDay {
   [date: string]: Transaction[];
@@ -48,6 +49,9 @@ export function WeeksTab({
       if (!items) continue;
       for (const tx of items) {
         tot.count += 1;
+        // Pending transactions still appear in the list/count above — only
+        // the income/expense totals exclude them (Phase 2 fix, isRealized).
+        if (!isRealized(tx)) continue;
         if (tx.type === "income") tot.income += tx.amount;
         else if (tx.type === "expense") tot.expense += tx.amount;
       }
@@ -187,10 +191,10 @@ export function WeeksTab({
                     {week.days.map((day) => {
                       const dayTx = byDay[day.date] ?? [];
                       const dayIncome = dayTx
-                        .filter((t) => t.type === "income")
+                        .filter((t) => t.type === "income" && isRealized(t))
                         .reduce((s, t) => s + t.amount, 0);
                       const dayExpense = dayTx
-                        .filter((t) => t.type === "expense")
+                        .filter((t) => t.type === "expense" && isRealized(t))
                         .reduce((s, t) => s + t.amount, 0);
                       const net = dayIncome - dayExpense;
                       const dayActs = activities.filter((a) => a.date === day.date);

@@ -1,101 +1,37 @@
 -- ============================================================
--- 022_platform_ownership_transfer.sql
--- Atomic transfer of the identity-based platform-admin role.
+-- 022_platform_ownership_transfer.sql — SUPERSEDED, DO NOT APPLY
 -- ============================================================
-
--- Platform transfers are not tenant events. Keep the existing audit
--- table, but allow a platform event to have no business_id.
-alter table public.audit_events
-  alter column business_id drop not null;
-
-create or replace function public.transfer_platform_ownership(
-  p_new_owner_id uuid
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_previous_owner_id uuid := auth.uid();
-  v_previous_email text;
-  v_new_email text;
-  v_previous_is_owner boolean;
-begin
-  -- Serialize transfers so two open admin sessions cannot both complete.
-  perform pg_advisory_xact_lock(742391028);
-
-  select is_platform_admin
-    into v_previous_is_owner
-    from public.profiles
-   where id = v_previous_owner_id
-   for update;
-
-  if v_previous_owner_id is null or coalesce(v_previous_is_owner, false) = false then
-    raise exception 'Only the current platform owner can transfer ownership'
-      using errcode = '42501';
-  end if;
-
-  if p_new_owner_id is null or p_new_owner_id = v_previous_owner_id then
-    raise exception 'A different owner account is required';
-  end if;
-
-  select email
-    into v_previous_email
-    from public.profiles
-   where id = v_previous_owner_id;
-
-  select email
-    into v_new_email
-    from public.profiles
-   where id = p_new_owner_id
-   for update;
-
-  if not found then
-    raise exception 'The new owner profile is not ready';
-  end if;
-
-  -- Promote the destination before revoking the source so the platform
-  -- always has an owner, while ending with exactly one active owner.
-  update public.profiles
-     set is_platform_admin = true
-   where id = p_new_owner_id;
-
-  update public.profiles
-     set is_platform_admin = false
-   where is_platform_admin = true
-     and id <> p_new_owner_id;
-
-  insert into public.audit_events (
-    business_id,
-    actor_user_id,
-    actor_role,
-    action,
-    entity_type,
-    entity_id,
-    metadata
-  ) values (
-    null,
-    v_previous_owner_id,
-    'platform_admin',
-    'platform_ownership_transferred',
-    'platform_ownership',
-    p_new_owner_id,
-    jsonb_build_object(
-      'previous_owner_id', v_previous_owner_id,
-      'previous_owner_email', v_previous_email,
-      'new_owner_id', p_new_owner_id,
-      'new_owner_email', v_new_email
-    )
-  );
-
-  return jsonb_build_object(
-    'success', true,
-    'previous_owner_id', v_previous_owner_id,
-    'new_owner_id', p_new_owner_id
-  );
-end;
-$$;
-
-revoke all on function public.transfer_platform_ownership(uuid) from public;
-grant execute on function public.transfer_platform_ownership(uuid) to authenticated;
+--
+-- STATUS: This migration was NEVER applied to production and MUST NOT
+-- be applied to the current production schema. It is kept in the
+-- repository only as a historical record; its executable SQL has been
+-- removed so it cannot be mistaken for the current implementation or
+-- accidentally run by a future migration tool.
+--
+-- WHY IT IS SUPERSEDED:
+--   1. It targets a `public.audit_events` table that does not exist on
+--      the current production database (confirmed live, 2026-09-16).
+--      Applying it as written would fail immediately on the
+--      `alter table public.audit_events ...` statement.
+--   2. It predates the Phase 1 security lockdown
+--      (20260915190000_lock_platform_admin_column.sql). That migration
+--      added a trigger (profiles_guard_platform_admin) that blocks any
+--      authenticated-role change to profiles.is_platform_admin UNLESS a
+--      narrow, transaction-local bypass flag is set. This migration's
+--      plain UPDATE statements never set that flag, so even a corrected,
+--      audit_events-free version of this function would be blocked by
+--      the current trigger.
+--
+-- THE AUTHORITATIVE REPLACEMENT:
+--   supabase/migrations/20260916010000_platform_ownership_transfer_rpc.sql
+--   This is the migration actually applied to production (verified
+--   2026-09-16: function definition matches this repository's copy
+--   byte-for-byte; authorization, self-transfer/nonexistent-target
+--   rejection, and the Phase 1 trigger bypass are all covered by
+--   tests/ownership-transfer.test.ts). It targets the CURRENT schema
+--   (no audit_events dependency) and correctly sets the Phase 1 bypass
+--   flag before its two UPDATE statements.
+--
+-- See also: supabase/migrations/README.md for the full picture of how
+-- this repository's migration history relates to what is actually
+-- deployed to production.

@@ -60,12 +60,16 @@ export function nextId(prefix: string, existing: string[]): string {
  */
 export function addMonths(dateStr: string, months: number): string {
   const [year, month, day] = dateStr.split("-").map(Number);
-  const d = new Date(year, month - 1, day);
-  d.setMonth(d.getMonth() + months);
-  const y = d.getFullYear();
-  const m = d.getMonth() + 1;
-  const da = d.getDate();
-  return `${y}-${String(m).padStart(2, "0")}-${String(da).padStart(2, "0")}`;
+  // Compute the target month/year via integer arithmetic first, then clamp
+  // the day into that month, rather than letting Date.setMonth() roll a
+  // too-large day into the following month (e.g. Jan 31 -> "Feb 31" ->
+  // silently becomes Mar 3 instead of the intended Feb 28/29).
+  const totalMonths = (year * 12 + (month - 1)) + months;
+  const y = Math.floor(totalMonths / 12);
+  const m = totalMonths % 12; // 0-11
+  const lastDayOfTargetMonth = new Date(y, m + 1, 0).getDate();
+  const da = Math.min(day, lastDayOfTargetMonth);
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(da).padStart(2, "0")}`;
 }
 
 // ------------------------------------------------------------

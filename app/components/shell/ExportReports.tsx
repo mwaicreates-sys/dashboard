@@ -10,6 +10,8 @@ import {
   shortDayLabel,
 } from "@/lib/dates";
 import { DownloadIcon, PrintIcon } from "./icons";
+import { isRealized } from "@/lib/calculations";
+import { rowsToCsv } from "@/lib/csv";
 
 type RangeId = "day" | "week" | "month" | "year";
 
@@ -62,9 +64,16 @@ export function ExportReports() {
     };
   }, [range, dayKey, monthKey, displayTransactions, activities, selectedYear]);
 
-  const income = report.transactions.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  // Phase 2 fixes: pending transactions excluded ("not counted yet",
+  // isRealized) and transfers excluded from outflow — matching
+  // calculations.ts's rule exactly so exported/printed totals always tie
+  // out to the dashboard's totals for the same period. The raw transaction
+  // list below (CSV rows, print table) is unaffected — pending entries
+  // still appear there with their status column visible; only these
+  // aggregate summary figures are filtered.
+  const income = report.transactions.filter((t) => t.type === "income" && isRealized(t)).reduce((s, t) => s + t.amount, 0);
   const outflow = report.transactions
-    .filter((t) => t.type === "expense" || t.type === "transfer")
+    .filter((t) => t.type === "expense" && isRealized(t))
     .reduce((s, t) => s + t.amount, 0);
 
   return (
@@ -209,11 +218,7 @@ function ExportButtons({
     rows.push(["", "", "", "", "Currency", currency]);
     rows.push(["", "", "", "", "Net", (income - outflow).toFixed(2)]);
 
-    const csvEscape = (v: string | number) => {
-      const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const csv = rows.map((r) => r.map(csvEscape).join(",")).join("\n");
+    const csv = rowsToCsv(rows);
     const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -260,9 +265,12 @@ function openPrintReport(
   const win = window.open("", "_blank", "width=820,height=920");
   if (!win) return;
 
+  // "Spending by category" mirrors the dashboard's Outflow Types/Top
+  // Spendings breakdown (expense-only, realized-only) — Phase 2 fix, was
+  // previously also counting transfers and pending transactions as spend.
   const byCategory = new Map<string, number>();
   for (const tx of report.transactions) {
-    if (tx.type !== "expense" && tx.type !== "transfer") continue;
+    if (tx.type !== "expense" || !isRealized(tx)) continue;
     byCategory.set(tx.categoryId, (byCategory.get(tx.categoryId) ?? 0) + tx.amount);
   }
   const catRows = [...byCategory.entries()]

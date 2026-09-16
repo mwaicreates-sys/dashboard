@@ -16,8 +16,16 @@ import { PeriodConfig } from "@/data/model/types";
  * never rendered in the UI.
  */
 
-/** Default selected calendar year. */
-export const DEFAULT_YEAR = 2026;
+/**
+ * Default selected calendar year — the real current year, not a fixed
+ * literal. Used as the fallback for a business with no persisted
+ * `selectedYear` and no transactions yet (`yearsWithData`'s fallback). A
+ * hardcoded year works only until the calendar crosses it: a business
+ * created after that point would default to viewing a year with no data
+ * and no way to navigate off it (the selector only offers years that
+ * exist in `yearsWithData`'s result).
+ */
+export const DEFAULT_YEAR = new Date().getFullYear();
 
 export const DEFAULT_PERIOD_ID = "2025-2026";
 

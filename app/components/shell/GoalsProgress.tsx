@@ -17,15 +17,28 @@ export function GoalsProgress() {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Reused for the delete button and the "add progress" control below —
+  // Phase 3: neither may look successful before Supabase acknowledges it.
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const save = () => {
+  const save = async () => {
     const t = Number(target);
-    if (!name.trim() || !t || t <= 0) return;
-    addGoal({ name: name.trim(), targetAmount: t, currentAmount: 0, targetDate: deadline || "", status: "active", currency });
-    setName("");
-    setTarget("");
-    setDeadline("");
-    setAdding(false);
+    if (!name.trim() || !t || t <= 0 || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await addGoal({ name: name.trim(), targetAmount: t, currentAmount: 0, targetDate: deadline || "", status: "active", currency });
+      setName("");
+      setTarget("");
+      setDeadline("");
+      setAdding(false);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Could not save the goal. Please retry.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -49,6 +62,10 @@ export function GoalsProgress() {
           {adding ? "×" : <PlusIcon className="h-4 w-4" />}
         </button>
       </div>
+
+      {actionError ? (
+        <p role="alert" className="mb-2 text-[10px] font-medium text-orange">{actionError}</p>
+      ) : null}
 
       {displayGoals.length === 0 && !adding ? (
         <p className="rounded-xl border border-dashed border-border bg-card/30 px-3 py-4 text-center text-[11px] text-muted-text">
@@ -75,7 +92,7 @@ export function GoalsProgress() {
                         added value back into the goal's ORIGINAL currency so a goal is
                         never double-converted later. */}
                     <AddToGoal
-                      onAdd={(v) => {
+                      onAdd={async (v) => {
                         const raw = goals.find((x) => x.id === dg.id) ?? dg;
                         const goalCurrency = raw.currency ?? DEFAULT_CURRENCY;
                         const baseAdd = convertAmount(v, currency, goalCurrency) ?? v;
@@ -86,7 +103,12 @@ export function GoalsProgress() {
                             : raw.status === "completed" && next < raw.targetAmount
                               ? "active"
                               : raw.status;
-                        updateGoal(raw.id, { currentAmount: next, status });
+                        try {
+                          await updateGoal(raw.id, { currentAmount: next, status });
+                          setActionError(null);
+                        } catch (error) {
+                          setActionError(error instanceof Error ? error.message : "Could not save progress. Please retry.");
+                        }
                       }}
                     />
                     <span className={`text-[11px] font-semibold tabular-nums ${completed ? "text-green" : "text-primary-text"}`}>
@@ -94,7 +116,11 @@ export function GoalsProgress() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => deleteGoal(dg.id)}
+                      onClick={() => {
+                        deleteGoal(dg.id).catch((error) => {
+                          setActionError(error instanceof Error ? error.message : "Could not delete the goal. Please retry.");
+                        });
+                      }}
                       aria-label={`Delete goal ${dg.name}`}
                       className="rounded-md px-1 text-[10px] text-muted-text transition-colors hover:text-orange"
                     >
@@ -120,7 +146,9 @@ export function GoalsProgress() {
           deadline={deadline}
           setDeadline={setDeadline}
           onSave={save}
-          onCancel={() => setAdding(false)}
+          onCancel={() => { setAdding(false); setSaveError(null); }}
+          saving={saving}
+          error={saveError}
         />
       ) : null}
     </section>
@@ -136,6 +164,8 @@ function AddGoalForm({
   setDeadline,
   onSave,
   onCancel,
+  saving,
+  error,
 }: {
   name: string;
   setName: (v: string) => void;
@@ -145,40 +175,51 @@ function AddGoalForm({
   setDeadline: (v: string) => void;
   onSave: () => void;
   onCancel: () => void;
+  saving: boolean;
+  error: string | null;
 }) {
   return (
-    <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-border bg-card/40 p-3">
-      <label className="min-w-[140px] flex-1">
-        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Goal</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. New laptop fund" aria-label="Goal name" className={inputCls} />
-      </label>
-      <label className="w-24">
-        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Target</span>
-        <input type="number" min="0" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="0" aria-label="Target amount" className={inputCls} />
-      </label>
-      <label className="w-36">
-        <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Deadline</span>
-        <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} aria-label="Target date" className={inputCls} />
-      </label>
-      <button type="button" onClick={onSave} disabled={!name.trim() || !Number(target)} className="h-9 rounded-xl bg-blue px-3.5 text-xs font-medium text-white transition-colors hover:bg-blue/90 disabled:opacity-40">
-        Save
-      </button>
-      <button type="button" onClick={onCancel} className="h-9 rounded-xl border border-border bg-card px-3 text-xs text-secondary-text transition-colors hover:bg-surface">
-        Cancel
-      </button>
+    <div className="mt-3 rounded-xl border border-border bg-card/40 p-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="min-w-[140px] flex-1">
+          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Goal</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. New laptop fund" aria-label="Goal name" disabled={saving} className={inputCls} />
+        </label>
+        <label className="w-24">
+          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Target</span>
+          <input type="number" min="0" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="0" aria-label="Target amount" disabled={saving} className={inputCls} />
+        </label>
+        <label className="w-36">
+          <span className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-muted-text">Deadline</span>
+          <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} aria-label="Target date" disabled={saving} className={inputCls} />
+        </label>
+        <button type="button" onClick={onSave} disabled={!name.trim() || !Number(target) || saving} className="h-9 rounded-xl bg-blue px-3.5 text-xs font-medium text-white transition-colors hover:bg-blue/90 disabled:opacity-40">
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button type="button" onClick={onCancel} disabled={saving} className="h-9 rounded-xl border border-border bg-card px-3 text-xs text-secondary-text transition-colors hover:bg-surface disabled:opacity-40">
+          Cancel
+        </button>
+      </div>
+      {error ? <p role="alert" className="mt-2 text-[10px] font-medium text-red-600">{error}</p> : null}
     </div>
   );
 }
 
-function AddToGoal({ onAdd }: { onAdd: (v: number) => void }) {
+function AddToGoal({ onAdd }: { onAdd: (v: number) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [val, setVal] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const confirm = () => {
-    if (Number(val) > 0) {
-      onAdd(Number(val));
-      setVal("");
-      setOpen(false);
+  const confirm = async () => {
+    if (Number(val) > 0 && !busy) {
+      setBusy(true);
+      try {
+        await onAdd(Number(val));
+        setVal("");
+        setOpen(false);
+      } finally {
+        setBusy(false);
+      }
     }
   };
 
@@ -205,15 +246,16 @@ function AddToGoal({ onAdd }: { onAdd: (v: number) => void }) {
         value={val}
         onChange={(e) => setVal(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") confirm();
-          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Enter") void confirm();
+          if (e.key === "Escape" && !busy) setOpen(false);
         }}
+        disabled={busy}
         aria-label="Amount to add to goal"
         placeholder="0"
-        className="h-6 w-16 rounded-md border border-border bg-card px-1.5 text-right text-[11px] tabular-nums text-primary-text outline-none focus-visible:ring-2 focus-visible:ring-blue/60"
+        className="h-6 w-16 rounded-md border border-border bg-card px-1.5 text-right text-[11px] tabular-nums text-primary-text outline-none focus-visible:ring-2 focus-visible:ring-blue/60 disabled:opacity-40"
       />
-      <button type="button" onClick={confirm} disabled={!Number(val)} aria-label="Confirm amount" className="text-[10px] font-medium text-green disabled:opacity-40">
-        ✓
+      <button type="button" onClick={() => void confirm()} disabled={!Number(val) || busy} aria-label="Confirm amount" className="text-[10px] font-medium text-green disabled:opacity-40">
+        {busy ? "…" : "✓"}
       </button>
     </span>
   );

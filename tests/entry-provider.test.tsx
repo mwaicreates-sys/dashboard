@@ -31,6 +31,7 @@ vi.mock("@/components/shell/SearchableSelect", () => ({ SearchableSelect: ({ val
 import { DashboardProvider, useDashboardData } from "@/lib/dashboardData";
 import { EntryForm } from "@/components/shell/EntryForm";
 import { CloudAccountCard } from "@/components/shell/CloudAccountCard";
+import type { Transaction } from "@/data/model/types";
 
 const initial = (): CloudState => ({
   accounts: [{ id: "a", name: "Cash", type: "checking", openingBalance: 100, currentBalance: 100, currency: "USD", active: true }],
@@ -40,13 +41,13 @@ const initial = (): CloudState => ({
 });
 let dashboard: ReturnType<typeof useDashboardData>;
 const closed = vi.fn();
-function Probe({ form = false }: { form?: boolean }) {
+function Probe({ form = false, editTx }: { form?: boolean; editTx?: Transaction }) {
   const data = useDashboardData();
   useLayoutEffect(() => { dashboard = data; }, [data]);
   return <>
     <span data-testid="status">{data.cloudSyncState}</span>
     <span data-testid="entries">{data.transactions.map((t) => t.description).join(",")}</span>
-    {form && <EntryForm kind={{ id: "expenses", label: "Expense", groups: ["expenses"], defaultType: "expense", chooseType: false, transferToggle: false }} onClose={closed} />}
+    {form && <EntryForm kind={{ id: "expenses", label: "Expense", groups: ["expenses"], defaultType: "expense", chooseType: false, transferToggle: false }} onClose={closed} editTx={editTx} />}
   </>;
 }
 beforeEach(() => {
@@ -141,4 +142,82 @@ it("failed pending writes prevent sign-out, tenant switching and selector naviga
   await act(async () => { fireEvent.click(screen.getByRole("link", { name: "Open workspace selector" })); });
   expect(mocks.push.mock.calls.length).toBeGreaterThan(beforeSelector);
   expect(dashboard.activeBusiness?.id).toBe("business-a");
+});
+
+// ------------------------------------------------------------------
+// Phase 2 — financial data integrity regression tests
+// ------------------------------------------------------------------
+
+const twoAccounts = (): CloudState => ({
+  ...initial(),
+  accounts: [
+    { id: "a", name: "Cash", type: "checking", openingBalance: 100, currentBalance: 100, currency: "USD", active: true },
+    { id: "gbp", name: "UK Account", type: "checking", openingBalance: 200, currentBalance: 200, currency: "GBP", active: true },
+  ],
+});
+
+it("editing a legacy transaction (no stored currency) never stamps the active display currency", async () => {
+  const legacyTx: Transaction = {
+    id: "tx-legacy", date: "2026-01-10", accountId: "a", categoryId: "c",
+    type: "expense", amount: 100, description: "Legacy expense", status: "cleared",
+    // currency intentionally absent — the pre-fix bug case.
+  };
+  mocks.pull.mockResolvedValue({ ...twoAccounts(), transactions: [legacyTx] });
+  render(<DashboardProvider><Probe form editTx={legacyTx} /></DashboardProvider>);
+  await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("synced"));
+  // Switch display currency away from the account's real currency (USD) —
+  // this is exactly the audit's repro scenario.
+  await act(async () => { dashboard.setCurrency("KES"); });
+  fireEvent.click(screen.getByRole("button", { name: "+ Add note" }));
+  fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "just a note edit" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  // Assert against the provider's own settled state, not a specific mock
+  // call index — setCurrency("KES") itself triggers the auto-sync effect's
+  // own (unrelated) push, so the Save button's push may not be call [0].
+  await waitFor(() => expect(dashboard.transactions.find((t) => t.id === "tx-legacy")?.notes).toBe("just a note edit"));
+  const saved = dashboard.transactions.find((t) => t.id === "tx-legacy")!;
+  expect(saved.currency).not.toBe("KES");
+  // No explicit currency ever existed and no per-transaction currency
+  // picker exists in the UI, so the correct value is the account's own
+  // real currency (USD) — matching the read-path fallback exactly.
+  expect(saved.currency).toBe("USD");
+  expect(saved.amount).toBe(100); // never converted/rewritten, only re-attributed
+});
+
+it("editing a transaction with an explicit non-account, non-display currency preserves it untouched", async () => {
+  const explicitTx: Transaction = {
+    id: "tx-explicit", date: "2026-01-11", accountId: "gbp", categoryId: "c",
+    type: "expense", amount: 50, description: "Explicit currency expense", status: "cleared",
+    currency: "USD", // deliberately neither the account's currency (GBP) nor the display currency
+  };
+  mocks.pull.mockResolvedValue({ ...twoAccounts(), transactions: [explicitTx] });
+  render(<DashboardProvider><Probe form editTx={explicitTx} /></DashboardProvider>);
+  await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("synced"));
+  await act(async () => { dashboard.setCurrency("KES"); });
+  fireEvent.click(screen.getByRole("button", { name: "+ Add note" }));
+  fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "note only" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(dashboard.transactions.find((t) => t.id === "tx-explicit")?.notes).toBe("note only"));
+  const saved = dashboard.transactions.find((t) => t.id === "tx-explicit")!;
+  expect(saved.currency).toBe("USD"); // preserved — not GBP (account) and not KES (display)
+});
+
+it("a transfer between the user's own accounts changes both balances but not their sum", async () => {
+  mocks.pull.mockResolvedValue(twoAccounts());
+  render(<DashboardProvider><Probe /></DashboardProvider>);
+  await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("synced"));
+  const before = dashboard.accounts.reduce((sum, a) => sum + a.currentBalance, 0);
+  expect(before).toBe(300); // 100 + 200
+  await act(async () => {
+    await dashboard.saveEntry({
+      id: "tx-transfer", date: "2026-01-12", accountId: "a", toAccountId: "gbp", categoryId: "c",
+      type: "transfer", amount: 40, description: "Move to UK account", status: "cleared",
+    });
+  });
+  const cash = dashboard.accounts.find((a) => a.id === "a")!;
+  const gbp = dashboard.accounts.find((a) => a.id === "gbp")!;
+  expect(cash.currentBalance).toBe(60); // 100 - 40
+  expect(gbp.currentBalance).toBe(240); // 200 + 40
+  const after = dashboard.accounts.reduce((sum, a) => sum + a.currentBalance, 0);
+  expect(after).toBe(before); // aggregate wealth unchanged by an internal transfer
 });

@@ -125,9 +125,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 )}
               </button>
 
-              {/* User avatar with chevron */}
-              <button
-                type="button"
+              {/* User avatar — links to the existing Profile page (already the
+                  fourth destination on the mobile bottom nav; this desktop
+                  control had no destination wired up). */}
+              <Link
+                href="/admin/profile"
                 aria-label="Account menu"
                 className="flex items-center gap-1 rounded-xl border border-border p-1 transition-colors duration-150 hover:bg-card"
               >
@@ -146,7 +148,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 >
                   <path d="M6 9.5l6 6 6-6" />
                 </svg>
-              </button>
+              </Link>
             </div>
           </div>
         </header>
