@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useDashboardData } from "@/lib/dashboardData";
 import type { Transaction, PlannedTransaction } from "@/data/model/types";
 import { formatMoneyFull, shortDayLabel, todayISO } from "@/lib/dates";
-import { DEBT_ACCOUNT_TYPES, isDebtAccountType, isRealized, isSpendableAccount } from "@/lib/calculations";
+import { DEBT_ACCOUNT_TYPES, isRealized, isSpendableAccount } from "@/lib/calculations";
+import { classifyEntryKind } from "@/lib/entryClassification";
 import { EntryForm, type KindConfig } from "./EntryForm";
 import {
   IncomeCatIcon,
@@ -86,7 +87,7 @@ const CARD_META: Record<
     href: "/debts",
     chip: "bg-orange/10 text-orange",
   },
-  other: { icon: OtherCatIcon, desc: "Anything else", chip: "bg-blue/10 text-blue" },
+  other: { icon: OtherCatIcon, desc: "Anything else", href: "/other", chip: "bg-blue/10 text-blue" },
   investments: {
     icon: InvestmentsCatIcon,
     desc: "Long-term growth",
@@ -154,63 +155,11 @@ export function EntryTab() {
 
   // Structural, not Transaction-specific — also used for PlannedTransaction
   // rows below, which share the same category/account/type shape.
-  const kindForTx = (tx: Pick<Transaction, "categoryId" | "accountId" | "toAccountId" | "type">): KindConfig => {
-    const category = catById.get(tx.categoryId);
-    const group = category?.group;
-
-    if (group === "investments") return KINDS.find((k) => k.id === "investments")!;
-
-    const inferredTransferKind = (() => {
-      const accountTypes = [
-        accById.get(tx.accountId)?.type,
-        tx.toAccountId ? accById.get(tx.toAccountId)?.type : undefined,
-      ].filter((type): type is NonNullable<typeof type> => Boolean(type));
-      if (accountTypes.some((type) => type === "savings")) return KINDS.find((k) => k.id === "savings")!;
-      if (accountTypes.some((type) => type === "investment")) return KINDS.find((k) => k.id === "investments")!;
-      if (accountTypes.some((type) => isDebtAccountType(type))) return KINDS.find((k) => k.id === "debt")!;
-      return null;
-    })();
-
-    if (tx.type === "income") return KINDS.find((k) => k.id === "income")!;
-    if (tx.type === "transfer" && inferredTransferKind) return inferredTransferKind;
-
-    const byGroup = KINDS.find(
-      (k) =>
-        k.id !== "other" &&
-        k.id !== "investments" &&
-        tx.type === (k.defaultType === "income" ? "income" : tx.type === "transfer" ? "transfer" : "expense") &&
-        group !== undefined &&
-        k.groups.includes(group)
-    );
-
-    if (byGroup) return byGroup;
-
-    // Fallback for legacy or partially-missing category metadata: still classify
-    // real financial movement by the transaction/account type instead of forcing
-    // every row into Other.
-    if (tx.type === "expense" || tx.type === "transfer") {
-      if (category?.name.toLowerCase().includes("loan") || category?.name.toLowerCase().includes("credit")) {
-        return KINDS.find((k) => k.id === "debt")!;
-      }
-      if (category?.name.toLowerCase().includes("savings") || category?.name.toLowerCase().includes("reserve") || category?.name.toLowerCase().includes("emergency")) {
-        return KINDS.find((k) => k.id === "savings")!;
-      }
-      if (category?.name.toLowerCase().includes("investment") || category?.name.toLowerCase().includes("equipment") || category?.name.toLowerCase().includes("retirement") || category?.name.toLowerCase().includes("expansion")) {
-        return KINDS.find((k) => k.id === "investments")!;
-      }
-      // Genuinely unclassifiable (Entry-page audit fix): every real
-      // CategoryGroup value ("income"/"bills"/"expenses"/"savings"/
-      // "investments"/"debt") is already claimed by one of the byGroup
-      // checks above, so reaching here means the category is missing,
-      // orphaned, or carries an unrecognized group — NOT a normal
-      // expense. This used to default to "outflow", which silently
-      // counted unclassifiable entries as ordinary spending. It now
-      // correctly falls to "Other" instead of being misrepresented.
-      return KINDS.find((k) => k.id === "other")!;
-    }
-
-    return KINDS.find((k) => k.id === "other")!;
-  };
+  // Delegates to the shared classifyEntryKind (@/lib/entryClassification)
+  // so this card grid and each card's detail-view destination (/other in
+  // particular) can never disagree about which transactions belong where.
+  const kindForTx = (tx: Pick<Transaction, "categoryId" | "accountId" | "toAccountId" | "type">): KindConfig =>
+    KINDS.find((k) => k.id === classifyEntryKind(tx, catById, accById))!;
 
   // Flow stats per kind from actual year transactions (one pass). Only
   // REALIZED transactions count — a pending entry has explicitly "not
@@ -390,6 +339,17 @@ export function EntryTab() {
               key={kind.id}
               className="group relative flex min-h-[96px] flex-col justify-between overflow-hidden rounded-xl border border-border bg-surface p-3 transition-colors duration-200 hover:border-secondary-text/40 focus-within:border-blue/60 sm:min-h-[120px] sm:p-3.5"
             >
+              {/* CARD BODY = VIEW. This full-cover Link is the actual click
+                  target for the whole card — the two content blocks below
+                  are layered visually ON TOP of it (later in DOM order, so
+                  they paint above), which without `pointer-events-none`
+                  would silently swallow clicks landing on the icon/label/
+                  numbers themselves (the most visually obvious, most
+                  clicked part of the card) and only let clicks in the
+                  empty padding around them reach the Link. Making the
+                  purely-informational content pass pointer events through
+                  is the fix: users can click anywhere on the visible card
+                  — including directly on the numbers — and it navigates. */}
               {meta.href ? (
                 <Link
                   href={meta.href}
@@ -405,14 +365,14 @@ export function EntryTab() {
                 />
               )}
 
-              <div className="relative flex items-center gap-2">
+              <div className="relative flex items-center gap-2 pointer-events-none">
                 <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${meta.chip}`}>
                   <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
                 </span>
                 <p className="text-sm font-semibold text-primary-text">{kind.label}</p>
               </div>
 
-              <div className="relative mt-0.5">
+              <div className="relative mt-0.5 pointer-events-none">
                 <p className="truncate text-base font-semibold tabular-nums text-primary-text">
                   {stat.main}
                 </p>

@@ -1,20 +1,39 @@
 "use client";
 
+import { useMemo } from "react";
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyFull } from "@/lib/currency";
-import { isDebtAccount } from "@/lib/calculations";
+import { isDebtAccount, isRealized } from "@/lib/calculations";
+import { classifyEntryKind } from "@/lib/entryClassification";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function OutflowDetails() {
   const { displayTransactions, categories, accounts, selectedPeriod, topOutflows } =
     useDashboardData();
 
+  const catById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+  const accById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+
   const period = selectedPeriod;
+  // Realized AND classified as "outflow" (Entry-card-consistency fix):
+  // matches the Entry Outflow card exactly — a plain `type === "expense"`
+  // filter would also sweep in legacy expense-shaped Savings/Debt/
+  // Investments entries (recorded before the simplified-Entry transfer
+  // fix) and pending transactions, neither of which the card counts.
+  // Sharing classifyEntryKind (the same function the card itself uses)
+  // means this page can never drift from what the card shows.
   const periodTx = displayTransactions.filter(
-    (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "expense"
+    (t) =>
+      t.date >= (period?.startDate ?? "") &&
+      t.date <= (period?.endDate ?? "") &&
+      isRealized(t) &&
+      classifyEntryKind(t, catById, accById) === "outflow"
   );
+  // Informational-only transfer breakdown (debt payments / savings &
+  // investment contributions leaving checking) — realized only, same
+  // rule, but deliberately NOT part of totalOutflow.
   const transferTx = displayTransactions.filter(
-    (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "transfer"
+    (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "transfer" && isRealized(t)
   );
 
   const totalOutflow = periodTx.reduce((sum, t) => sum + t.amount, 0);

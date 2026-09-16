@@ -2,14 +2,19 @@
 
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyFull } from "@/lib/currency";
+import { isRealized } from "@/lib/calculations";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function IncomeDetails() {
   const { displayTransactions, categories, accounts, selectedPeriod, incomeSplit, monthlyIncomeOutflow } = useDashboardData();
 
   const period = selectedPeriod;
+  // Realized only (Phase 2's isRealized rule) — matches the Entry
+  // Income card exactly, which represents REALIZED income for the
+  // selected period. A pending income transaction must not inflate this
+  // total any more than it inflates the card.
   const incomeTx = displayTransactions.filter(
-    (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "income"
+    (t) => t.date >= (period?.startDate ?? "") && t.date <= (period?.endDate ?? "") && t.type === "income" && isRealized(t)
   );
 
   const totalIncome = incomeTx.reduce((sum, t) => sum + t.amount, 0);

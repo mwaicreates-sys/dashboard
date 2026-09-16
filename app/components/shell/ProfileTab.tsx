@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTheme, ThemePreference } from "@/components/theme/ThemeProvider";
 import { useDashboardData } from "@/lib/dashboardData";
 import { loadFromStorage, saveToStorage } from "@/lib/storage";
@@ -389,16 +390,17 @@ export function ProfileTab() {
         Budgeting System · personal finance dashboard
       </p>
 
-      {currencyOpen ? (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Choose currency"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setCurrencyOpen(false);
-          }}
-        >
+      {currencyOpen
+        ? createPortal(
+          <div
+            className="modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose currency"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setCurrencyOpen(false);
+            }}
+          >
           <div className="modal-sheet w-full max-w-md rounded-t-3xl border border-border bg-surface shadow-xl sm:rounded-3xl">
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-light-border px-4 pb-3 pt-4">
               <h2 className="text-xl font-semibold text-primary-text">Choose Currency</h2>
@@ -448,8 +450,10 @@ export function ProfileTab() {
               Applied everywhere amounts are shown · real FX rates · saved on this device
             </footer>
           </div>
-        </div>
-      ) : null}
+          </div>,
+          document.body
+        )
+        : null}
     </div>
   );
 }
