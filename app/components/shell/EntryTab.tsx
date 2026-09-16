@@ -528,8 +528,17 @@ export function EntryTab() {
                       >
                         <p className="truncate text-[12px] font-medium text-primary-text">{tx.description}</p>
                         <p className="truncate text-[10px] text-muted-text">
-                          {shortDayLabel(tx.date)} · {cat?.name ?? "—"}
-                          {accName(tx.toAccountId) ? ` → ${accName(tx.toAccountId)}` : ""}
+                          {shortDayLabel(tx.date)} ·{" "}
+                          {/* Traceability fix: a transfer's subtitle shows
+                              the actual source → destination ACCOUNT
+                              names (the two real effects of the one
+                              transfer) instead of a category name paired
+                              with only the destination — the category
+                              alone couldn't answer "where did this money
+                              go". Income/Outflow rows are unaffected. */}
+                          {tx.type === "transfer" && tx.toAccountId
+                            ? `${accName(tx.accountId) ?? "—"} → ${accName(tx.toAccountId) ?? "—"}`
+                            : cat?.name ?? "—"}
                           {tx.notes ? ` · ${tx.notes}` : ""}
                         </p>
                       </button>

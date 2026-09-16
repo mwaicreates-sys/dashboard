@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDashboardData } from "@/lib/dashboardData";
-import type { Transaction, TransactionType, CategoryGroup, AccountType, PlannedTransaction, Recurrence } from "@/data/model/types";
-import { todayISO } from "@/lib/dates";
+import type { Account, Transaction, TransactionType, CategoryGroup, AccountType, PlannedTransaction, Recurrence } from "@/data/model/types";
+import { todayISO, formatMoneyFull } from "@/lib/dates";
 import { getCurrency } from "@/lib/currency";
+import { isDebtAccount } from "@/lib/calculations";
 import { XIcon } from "./icons";
 import { SearchableSelect } from "./SearchableSelect";
 
@@ -532,6 +533,16 @@ export function EntryForm({
 
           {/* Scrollable form body */}
           <fieldset disabled={saving} className="modal-body min-w-0 px-4 py-4 md:px-5">
+            {/* Transfer traceability: this edit modal doubles as the
+                "transfer detail" view for an existing transfer — the ONE
+                canonical transaction already has both accountId (source)
+                and toAccountId (destination), so both effects are shown
+                up front instead of leaving the user to infer where the
+                money went from the account+category fields below. */}
+            {editTx && editTx.type === "transfer" && editTx.toAccountId ? (
+              <TransferEffectSummary tx={editTx} accounts={accounts} />
+            ) : null}
+
             {/* Amount + date */}
             <div className="flex gap-2">
               <label className="min-w-0 flex-1">
@@ -1164,6 +1175,58 @@ function QuickAddDialog({
             </button>
           </div>
         </footer>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Read-only "both effects" breakdown for an existing transfer — answers
+ * "where did this money go" directly from the one canonical Transaction
+ * (accountId/toAccountId/amount), never a second persisted record.
+ *
+ * Debt/credit destinations get explicit wording instead of a bare "+"
+ * sign: a payment TOWARD a debt account reduces the amount owed, so a
+ * naked "+$200" next to "Credit Card" would read backwards. Symmetric
+ * clarifier on the source side for the mirror case (a transfer OUT of a
+ * debt account, e.g. a cash advance, which increases what's owed).
+ */
+function TransferEffectSummary({ tx, accounts }: { tx: Transaction; accounts: Account[] }) {
+  const fromAcc = accounts.find((a) => a.id === tx.accountId);
+  const toAcc = accounts.find((a) => a.id === tx.toAccountId);
+  const fromIsDebt = !!fromAcc && isDebtAccount(fromAcc);
+  const toIsDebt = !!toAcc && isDebtAccount(toAcc);
+  const statusLabel = tx.status === "cleared" ? "Completed" : tx.status === "pending" ? "Pending" : "Reconciled";
+
+  return (
+    <div className="mb-3 rounded-xl border border-border bg-card/40 p-3">
+      <div className="flex items-center justify-between">
+        <p className={labelCls}>Transfer</p>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+            tx.status === "pending" ? "bg-amber-500/10 text-amber-600" : "bg-green/10 text-green"
+          }`}
+        >
+          {statusLabel}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-3">
+        <div className="min-w-0">
+          <p className="text-[9px] font-medium uppercase tracking-wide text-muted-text">From</p>
+          <p className="truncate text-xs font-medium text-primary-text">{fromAcc?.name ?? "—"}</p>
+          <p className="text-sm font-semibold tabular-nums text-orange">
+            −{formatMoneyFull(tx.amount)}
+          </p>
+          {fromIsDebt ? <p className="text-[9px] text-muted-text">Increases amount owed</p> : null}
+        </div>
+        <div className="min-w-0">
+          <p className="text-[9px] font-medium uppercase tracking-wide text-muted-text">To</p>
+          <p className="truncate text-xs font-medium text-primary-text">{toAcc?.name ?? "—"}</p>
+          <p className="text-sm font-semibold tabular-nums text-green">
+            +{formatMoneyFull(tx.amount)}
+          </p>
+          {toIsDebt ? <p className="text-[9px] text-muted-text">Reduces amount owed</p> : null}
+        </div>
       </div>
     </div>
   );

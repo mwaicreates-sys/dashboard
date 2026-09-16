@@ -2,16 +2,37 @@
 
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyFull } from "@/lib/currency";
+import { isRealized } from "@/lib/calculations";
+import { getTransferAccountEffect } from "@/lib/transferEffect";
 import { DetailHeader, MetricCard, BreakdownTable, ProgressBar } from "@/components/details/shared";
 
 export default function SavingsDetails() {
   const { accounts, displayAccounts, displayTransactions, selectedPeriod, savingsGoal, progress } = useDashboardData();
 
   const savingsAccounts = displayAccounts.filter((a) => a.type === "savings");
+  const savingsAccountIds = new Set(savingsAccounts.map((a) => a.id));
+  // Deposits into savings only — the existing "Period Savings" figure.
+  // Left exactly as it was; the balance/period formulas this task must
+  // not touch.
   const savingsTx = displayTransactions.filter((t) => t.date >= (selectedPeriod?.startDate ?? "") && t.date <= (selectedPeriod?.endDate ?? "") && t.type === "transfer" && t.toAccountId && savingsAccounts.some((a) => a.id === t.toAccountId));
 
   const totalSaved = savingsAccounts.reduce((sum, a) => sum + a.currentBalance, 0);
   const monthlySavings = savingsTx.reduce((sum, t) => sum + t.amount, 0);
+
+  // Traceability fix: BOTH directions (money moving into savings AND
+  // money moving back out), realized only — separate from savingsTx
+  // above so the existing "Period Savings" metric formula is untouched.
+  // This is purely for the "where did the money go" movement list below.
+  const movementTx = displayTransactions
+    .filter(
+      (t) =>
+        isRealized(t) &&
+        t.type === "transfer" &&
+        t.date >= (selectedPeriod?.startDate ?? "") &&
+        t.date <= (selectedPeriod?.endDate ?? "") &&
+        (savingsAccountIds.has(t.accountId) || (t.toAccountId ? savingsAccountIds.has(t.toAccountId) : false))
+    )
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const rows = savingsAccounts.map((a) => ({
     Account: a.name,
@@ -57,31 +78,40 @@ export default function SavingsDetails() {
         </div>
 
         <div className="mt-3">
-          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">Recent Savings Transactions</h3>
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-text">Recent Movements</h3>
           <div className="overflow-x-auto rounded border border-border">
             <table className="w-full text-left text-[11px]">
               <thead>
                 <tr className="border-b border-border bg-card">
                   <th className="px-2 py-1.5 font-medium text-muted-text">Date</th>
-                  <th className="px-2 py-1.5 font-medium text-muted-text">Description</th>
+                  <th className="px-2 py-1.5 font-medium text-muted-text">Movement</th>
                   <th className="px-2 py-1.5 font-medium text-muted-text">Amount</th>
-                  <th className="px-2 py-1.5 font-medium text-muted-text">To Account</th>
                 </tr>
               </thead>
               <tbody>
-                {savingsTx.slice(0, 20).map((tx) => {
-                  const toAcc = accounts.find((a) => a.id === tx.toAccountId);
+                {movementTx.slice(0, 20).map((tx) => {
+                  // Whichever savings account this transfer actually
+                  // touches — a transfer can only involve one of them.
+                  const savingsAccountId = savingsAccountIds.has(tx.accountId)
+                    ? tx.accountId
+                    : tx.toAccountId!;
+                  const effect = getTransferAccountEffect(tx, savingsAccountId);
+                  if (!effect) return null;
+                  const counterparty = accounts.find((a) => a.id === effect.counterpartyAccountId)?.name ?? "—";
+                  const label = effect.direction === "in" ? `Transfer from ${counterparty}` : `Transfer to ${counterparty}`;
                   return (
                     <tr key={tx.id} className="border-b border-light-border last:border-b-0">
                       <td className="px-2 py-1.5 tabular-nums">{tx.date}</td>
-                      <td className="px-2 py-1.5">{tx.description}</td>
-                      <td className="px-2 py-1.5 tabular-nums text-green-600">{formatCurrencyFull(tx.amount)}</td>
-                      <td className="px-2 py-1.5">{toAcc?.name ?? tx.toAccountId}</td>
+                      <td className="px-2 py-1.5">{label}</td>
+                      <td className={`px-2 py-1.5 tabular-nums ${effect.direction === "in" ? "text-green-600" : "text-orange-600"}`}>
+                        {effect.direction === "in" ? "+" : "−"}
+                        {formatCurrencyFull(tx.amount)}
+                      </td>
                     </tr>
                   );
                 })}
-                {savingsTx.length === 0 ? (
-                  <tr><td colSpan={4} className="px-2 py-2 text-muted-text text-center">No savings transactions this period.</td></tr>
+                {movementTx.length === 0 ? (
+                  <tr><td colSpan={3} className="px-2 py-2 text-muted-text text-center">No savings movements this period.</td></tr>
                 ) : null}
               </tbody>
             </table>

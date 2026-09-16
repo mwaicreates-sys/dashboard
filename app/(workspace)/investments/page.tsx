@@ -2,15 +2,20 @@
 
 import { useDashboardData } from "@/lib/dashboardData";
 import { formatCurrencyFull } from "@/lib/currency";
+import { isRealized } from "@/lib/calculations";
+import { getTransferAccountEffect } from "@/lib/transferEffect";
 import { DetailHeader, MetricCard, BreakdownTable } from "@/components/details/shared";
 
 export default function InvestmentsDetails() {
-  const { displayAccounts, displayTransactions, categories, selectedPeriod } = useDashboardData();
+  const { accounts, displayAccounts, displayTransactions, categories, selectedPeriod } = useDashboardData();
 
   const investmentAccounts = displayAccounts.filter((a) => a.type === "investment");
   const start = selectedPeriod?.startDate ?? "";
   const end = selectedPeriod?.endDate ?? "";
   const investmentIds = new Set(investmentAccounts.map((a) => a.id));
+  // Deposits into investments + income posted directly on an investment
+  // account — the existing "Period Contributions" figure. Left exactly
+  // as it was; the balance/period formulas this task must not touch.
   const investmentTx = displayTransactions.filter(
     (t) =>
       t.date >= start &&
@@ -30,13 +35,46 @@ export default function InvestmentsDetails() {
 
   const catById = new Map(categories.map((c) => [c.id, c]));
 
-  const txRows = investmentTx.slice(0, 20).map((tx) => ({
-    Date: tx.date,
-    Description: tx.description,
-    Category: catById.get(tx.categoryId)?.name ?? tx.categoryId,
-    Amount: formatCurrencyFull(tx.amount),
-    Type: tx.type,
-  }));
+  // Traceability fix: BOTH transfer directions (money moving into
+  // investments AND money moving back out), realized only — separate
+  // from investmentTx above so the existing metric formula is untouched.
+  const movementTx = displayTransactions
+    .filter(
+      (t) =>
+        isRealized(t) &&
+        t.type === "transfer" &&
+        t.date >= start &&
+        t.date <= end &&
+        (investmentIds.has(t.accountId) || (t.toAccountId ? investmentIds.has(t.toAccountId) : false))
+    )
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  const incomeRows = investmentTx.filter((t) => t.type === "income");
+
+  const txRows = [...movementTx, ...incomeRows]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 20)
+    .map((tx) => {
+      if (tx.type === "transfer") {
+        const investmentAccountId = investmentIds.has(tx.accountId) ? tx.accountId : tx.toAccountId!;
+        const effect = getTransferAccountEffect(tx, investmentAccountId);
+        const counterparty = effect ? accounts.find((a) => a.id === effect.counterpartyAccountId)?.name ?? "—" : "—";
+        return {
+          Date: tx.date,
+          Description: effect?.direction === "in" ? `Transfer from ${counterparty}` : `Transfer to ${counterparty}`,
+          Category: "Transfer",
+          Amount: `${effect?.direction === "in" ? "+" : "−"}${formatCurrencyFull(tx.amount)}`,
+          Type: "transfer",
+        };
+      }
+      return {
+        Date: tx.date,
+        Description: tx.description,
+        Category: catById.get(tx.categoryId)?.name ?? tx.categoryId,
+        Amount: formatCurrencyFull(tx.amount),
+        Type: tx.type,
+      };
+    });
 
   return (
     <main className="flex-1 p-3 md:p-4">
