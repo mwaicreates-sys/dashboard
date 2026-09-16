@@ -102,6 +102,27 @@ export function isAssetAccount(account: { type: string }): boolean {
   return isAssetAccountType(account.type);
 }
 
+/**
+ * The SPENDABLE asset types (Entry-page "Available Balance" fix) — a
+ * narrower subset of ASSET_ACCOUNT_TYPES. "Asset" (above) answers "does
+ * this count toward Net Worth" and rightly includes savings/investment;
+ * "spendable" answers a different question — "is this money the user can
+ * freely spend right now, before it's been deliberately set aside" — so
+ * it deliberately EXCLUDES savings and investment (money already
+ * allocated elsewhere) even though both remain assets. "other" is
+ * excluded for the same reason as everywhere else: no recovered meaning
+ * to classify it by (see ASSET_ACCOUNT_TYPES's doc comment).
+ */
+export const SPENDABLE_ACCOUNT_TYPES = ["cash", "bank", "mobile_money", "checking"] as const;
+
+export function isSpendableAccountType(type: string): boolean {
+  return (SPENDABLE_ACCOUNT_TYPES as readonly string[]).includes(type);
+}
+
+export function isSpendableAccount(account: { type: string }): boolean {
+  return isSpendableAccountType(account.type);
+}
+
 function hashString(input: string): number {
   let hash = 0;
   for (let i = 0; i < input.length; i += 1) {

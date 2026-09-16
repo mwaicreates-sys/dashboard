@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useDashboardData } from "@/lib/dashboardData";
 import type { Transaction, PlannedTransaction } from "@/data/model/types";
 import { formatMoneyFull, shortDayLabel, todayISO } from "@/lib/dates";
-import { DEBT_ACCOUNT_TYPES, isDebtAccountType } from "@/lib/calculations";
+import { DEBT_ACCOUNT_TYPES, isDebtAccountType, isRealized, isSpendableAccount } from "@/lib/calculations";
 import { EntryForm, type KindConfig } from "./EntryForm";
 import {
   IncomeCatIcon,
@@ -198,17 +198,29 @@ export function EntryTab() {
       if (category?.name.toLowerCase().includes("investment") || category?.name.toLowerCase().includes("equipment") || category?.name.toLowerCase().includes("retirement") || category?.name.toLowerCase().includes("expansion")) {
         return KINDS.find((k) => k.id === "investments")!;
       }
-      return KINDS.find((k) => k.id === "outflow")!;
+      // Genuinely unclassifiable (Entry-page audit fix): every real
+      // CategoryGroup value ("income"/"bills"/"expenses"/"savings"/
+      // "investments"/"debt") is already claimed by one of the byGroup
+      // checks above, so reaching here means the category is missing,
+      // orphaned, or carries an unrecognized group — NOT a normal
+      // expense. This used to default to "outflow", which silently
+      // counted unclassifiable entries as ordinary spending. It now
+      // correctly falls to "Other" instead of being misrepresented.
+      return KINDS.find((k) => k.id === "other")!;
     }
 
     return KINDS.find((k) => k.id === "other")!;
   };
 
-  // Flow stats per kind from actual year transactions (one pass).
+  // Flow stats per kind from actual year transactions (one pass). Only
+  // REALIZED transactions count — a pending entry has explicitly "not
+  // counted yet" everywhere else in the app (Phase 2's isRealized rule);
+  // these cards must agree.
   const flowStats = useMemo(() => {
     const map: Record<string, { total: number; count: number }> = {};
     for (const k of KINDS) map[k.id] = { total: 0, count: 0 };
     for (const tx of yearTx) {
+      if (!isRealized(tx)) continue;
       const bucket = map[kindForTx(tx).id];
       if (!bucket) continue;
       bucket.count += 1;
@@ -219,38 +231,76 @@ export function EntryTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yearTx, categories]);
 
-  const balanceStats = useMemo<Record<string, KindStat>>(() => {
+  // Current combined balance of spendable (non-allocated) accounts — the
+  // Entry-page "how much can I actually still spend" figure. Deliberately
+  // NOT year-filtered (a current balance has no "year" — it's a snapshot
+  // right now) and, like the rest of this page's balance figures, read
+  // from displayAccounts so it's safely aggregated in the active display
+  // currency via the app's existing FX layer rather than naively summing
+  // different currencies together.
+  const spendableAccounts = useMemo(
+    () => displayAccounts.filter((a) => a.active && isSpendableAccount(a)),
+    [displayAccounts]
+  );
+  const availableBalance = useMemo(
+    () => spendableAccounts.reduce((sum, a) => sum + a.currentBalance, 0),
+    [spendableAccounts]
+  );
+
+  const balanceStats = useMemo<Record<string, KindStat & { netInPeriod: number }>>(() => {
     const sumByType = (types: Array<string>) =>
       displayAccounts
         .filter((a) => a.active && types.includes(a.type))
         .reduce((sum, a) => sum + Math.abs(a.currentBalance), 0);
+    // A "movement" is any REALIZED transfer touching a matching-type
+    // account this year, in EITHER direction (deposit or withdrawal) —
+    // the previous version only ever counted deposits, so a savings
+    // withdrawal silently vanished from the count. The legacy
+    // type==="expense" clause stays for pre-simplified-Entry historical
+    // data (savings/debt/investment entries recorded as a category-tagged
+    // expense before Savings/Debt/Investments became real transfers).
     const countByAccountTypes = (types: Array<string>) =>
       yearTx.filter((t) => {
+        if (!isRealized(t)) return false;
         const to = t.toAccountId ? accById.get(t.toAccountId) : undefined;
         const on = accById.get(t.accountId);
-        return (
-          (to && types.includes(to.type)) ||
-          (t.type === "expense" && on && types.includes(on.type))
-        );
+        if (t.type === "transfer") return (!!to && types.includes(to.type)) || (!!on && types.includes(on.type));
+        return t.type === "expense" && !!on && types.includes(on.type);
       }).length;
+    // Net amount moved INTO matching-type accounts this year (deposits
+    // minus withdrawals) — the "+$200 saved in 2026" secondary metric.
+    // Deliberately separate from sumByType's current-balance figure so
+    // the big number is never described by a period-scoped movement.
+    const netInPeriod = (types: Array<string>) =>
+      yearTx.reduce((sum, t) => {
+        if (!isRealized(t) || t.type !== "transfer") return sum;
+        const to = t.toAccountId ? accById.get(t.toAccountId) : undefined;
+        const on = accById.get(t.accountId);
+        if (to && types.includes(to.type)) sum += t.amount;
+        if (on && types.includes(on.type)) sum -= t.amount;
+        return sum;
+      }, 0);
 
     return {
-      income: { ...flowStat("income"), unit: "flow" },
-      outflow: { ...flowStat("outflow"), unit: "flow" },
-      other: { ...flowStat("other"), unit: "flow" },
+      income: { ...flowStat("income"), unit: "flow", netInPeriod: 0 },
+      outflow: { ...flowStat("outflow"), unit: "flow", netInPeriod: 0 },
+      other: { ...flowStat("other"), unit: "flow", netInPeriod: 0 },
       savings: {
         primary: sumByType(["savings"]),
         count: countByAccountTypes(["savings"]),
+        netInPeriod: netInPeriod(["savings"]),
         unit: "balance",
       },
       debt: {
         primary: sumByType([...DEBT_ACCOUNT_TYPES]),
         count: countByAccountTypes([...DEBT_ACCOUNT_TYPES]),
+        netInPeriod: 0, // debt's secondary metric is movement count only (see statLine)
         unit: "balance",
       },
       investments: {
         primary: sumByType(["investment"]),
         count: countByAccountTypes(["investment"]),
+        netInPeriod: netInPeriod(["investment"]),
         unit: "balance",
       },
     };
@@ -266,20 +316,32 @@ export function EntryTab() {
     .filter((p) => p.status === "pending")
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const statLine = (kindId: string): { main: string; sub: string } => {
+  /** What "earned"/"spent"/etc. this flow kind's amount represents. */
+  const FLOW_VERB: Record<string, string> = { income: "earned", outflow: "spent", other: "recorded" };
+
+  const statLine = (kindId: string): { main: string; sub: string; tertiary?: string } => {
     const stat = balanceStats[kindId];
     if (stat.unit === "balance") {
-      return {
-        main: formatMoneyFull(stat.primary),
-        sub:
-          stat.count > 0
-            ? `${stat.count} movement${stat.count === 1 ? "" : "s"} in ${selectedYear}`
-            : "current balance",
-      };
+      // The big number is ALWAYS described as a current balance — never
+      // replaced by a period movement count, which previously made a
+      // current balance look like "the amount moved this year" (the
+      // exact confusion this fix corrects). Movement detail, if any,
+      // becomes a separate, visually secondary line.
+      let tertiary: string | undefined;
+      if (stat.count > 0) {
+        if (kindId === "debt") {
+          tertiary = `${stat.count} debt movement${stat.count === 1 ? "" : "s"} in ${selectedYear}`;
+        } else {
+          const verb = kindId === "savings" ? "saved" : "invested";
+          const sign = stat.netInPeriod >= 0 ? "+" : "−";
+          tertiary = `${sign}${formatMoneyFull(Math.abs(stat.netInPeriod))} ${verb} in ${selectedYear} · ${stat.count} movement${stat.count === 1 ? "" : "s"}`;
+        }
+      }
+      return { main: formatMoneyFull(stat.primary), sub: "current balance", tertiary };
     }
     return {
       main: formatMoneyFull(stat.primary),
-      sub: `${stat.count} ${stat.count === 1 ? "entry" : "entries"} in ${selectedYear}`,
+      sub: `${FLOW_VERB[kindId] ?? "recorded"} in ${selectedYear}`,
     };
   };
 
@@ -300,6 +362,21 @@ export function EntryTab() {
           {actionError}
         </p>
       ) : null}
+
+      {/* Available Balance — current spendable balance, NOT income. Visually
+          distinct (a compact banner, not a clickable action card) so it
+          can't be mistaken for a seventh card. */}
+      <section className="rounded-xl border border-border bg-card/40 px-3 py-2.5 sm:px-3.5">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-muted-text">Available balance</p>
+        <p className="mt-0.5 text-xl font-semibold tabular-nums text-primary-text sm:text-2xl">
+          {formatMoneyFull(availableBalance)}
+        </p>
+        <p className="truncate text-[10px] text-muted-text">
+          {spendableAccounts.length > 1
+            ? spendableAccounts.map((a) => `${a.name} ${formatMoneyFull(a.currentBalance)}`).join(" · ")
+            : "Across spendable accounts"}
+        </p>
+      </section>
 
       {/* Six compact category cards — 3-across on desktop, 2-across on small, 1 on mobile */}
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -340,6 +417,9 @@ export function EntryTab() {
                   {stat.main}
                 </p>
                 <p className="truncate text-[10px] leading-tight text-muted-text">{stat.sub}</p>
+                {stat.tertiary ? (
+                  <p className="truncate text-[9px] leading-tight text-muted-text/70">{stat.tertiary}</p>
+                ) : null}
               </div>
 
               <div className="relative flex items-center justify-end">
