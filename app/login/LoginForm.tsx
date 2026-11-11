@@ -69,6 +69,27 @@ export function LoginForm() {
   };
 
   /** Platform-admin sign-in (unchanged email + password flow). */
+  const handlePasswordReset = async () => {
+    const client = getSupabaseBrowserClient();
+    if (!client || busy) return;
+    if (!email.trim()) {
+      setMessage("Enter Aden's admin email first.");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      });
+      setMessage(error ? error.message : "Password reset email sent. Open the link in the admin's inbox to choose a new password.");
+    } catch {
+      setMessage("Could not send the password reset email.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleAdminSignIn = async () => {
     const client = getSupabaseBrowserClient();
     if (!client || busy) return;
@@ -197,6 +218,17 @@ export function LoginForm() {
                 ? "Continue"
                 : "Sign in"}
           </button>
+
+          {mode === "admin" ? (
+            <button
+              type="button"
+              onClick={() => void handlePasswordReset()}
+              disabled={busy}
+              className="mt-3 w-full text-center text-[11px] font-medium text-blue transition-colors hover:opacity-80 disabled:opacity-50"
+            >
+              {busy ? "Sending…" : "Forgot password? Send reset link"}
+            </button>
+          ) : null}
 
           <button
             type="button"
