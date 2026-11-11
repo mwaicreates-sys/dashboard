@@ -92,7 +92,7 @@ export default function AdminBusinesses() {
     setIsDeleting(true);
     try {
       const { data, error: rpcError } = await client.rpc("admin_delete_business", {
-        p_business_id: deletingId,
+        business_id: deletingId,
       });
       if (rpcError) {
         console.error("admin_delete_business RPC error:", rpcError);
